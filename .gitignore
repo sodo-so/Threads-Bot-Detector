@@ -1,0 +1,23 @@
+# System Files
+.DS_Store
+Thumbs.db
+*_archive.zip
+
+# IDE/Editor Directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node modules (if you add build tools later)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# External Libraries (Manual Download Required)
+puter.js

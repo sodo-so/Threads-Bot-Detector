@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Threads Bot Detector",
+  "version": "2.4",
+  "description": "Analyze Threads followers to detect bots, fake accounts, and farmers using Cloud AI.",
+  "permissions": [
+    "activeTab", 
+    "scripting", 
+    "sidePanel", 
+    "storage", 
+    "proxy", 
+    "webRequest", 
+    "webRequestAuthProvider"
+  ],
+  "host_permissions": [
+    "https://www.threads.net/*",
+    "https://www.threads.com/*",
+    "https://*.puter.com/*",
+    "https://*.puter.site/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Bot Detector"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "icons": {
+    "128": "icon.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["locales/*.json", "puter.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

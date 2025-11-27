@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Threads Auditor</title>
+  <script src="puter.js"></script> 
+  <style>
+    /* ... (Keep existing CSS) ... */
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff; height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden; }
+    body.privacy-mode .ins-img, body.privacy-mode .loading-user, body.privacy-mode .row-name, body.privacy-mode .ins-header div, body.privacy-mode .ins-bio, body.privacy-mode .ins-post-main > div:last-child, body.privacy-mode .reply-card, body.privacy-mode .search-input { filter: blur(2.5px); user-select: none; }
+    #inspector { height: 45vh; width: 100%; flex-shrink: 0; background: #f9f9f9; border-bottom: 2px solid #ccc; padding: 15px; box-sizing: border-box; overflow-y: auto; display: block; font-size: 14px; }
+    .ins-ai-section { background: #e3f2fd; border: 1px solid #90caf9; border-radius: 8px; padding: 10px; margin-bottom: 5px; font-size: 13px; line-height: 1.5; color: #0d47a1; }
+    .ins-ai-title { font-weight: 800; color: #1565c0; display: block; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .ins-ai-content { font-weight: 500; }
+    .ins-header { display: flex; align-items: center; margin-bottom: 12px; }
+    .ins-img { width: 56px; height: 56px; border-radius: 50%; margin-right: 15px; background: #ccc; border: 1px solid #999; object-fit: cover; }
+    .ins-stats { display: flex; gap: 15px; margin-bottom: 12px; font-size: 13px; align-items: center; }
+    .ins-bio { font-style: italic; color: #444; margin-bottom: 15px; border-left: 3px solid #ddd; padding-left: 10px; line-height: 1.5; overflow: visible; }
+    .ins-empty { color: #999; text-align: center; margin: auto; padding-top: 40px; }
+    .ins-post-main { background: #fff; border: 1px solid #ddd; border-left: 4px solid #1565c0; border-radius: 6px; padding: 12px; margin-bottom: 15px; overflow: visible; }
+    .ins-post-reply { background: #fff; border: 1px solid #ddd; border-left: 4px solid #7b1fa2; border-radius: 6px; padding: 12px; display: block; min-height: 100px; }
+    .reply-list-scroll { margin-top: 8px; overflow: visible; }
+    .reply-card { background: #f8f8f8; border: 1px solid #eee; border-radius: 6px; padding: 10px; margin-bottom: 8px; font-size: 13px; line-height: 1.5; }
+    .activity-badge { font-size: 10px; text-transform: uppercase; padding: 3px 6px; border-radius: 4px; margin-right: 8px; font-weight: 700; }
+    .badge-Main { background: #e3f2fd; color: #1565c0; } .badge-Reply { background: #f3e5f5; color: #7b1fa2; }
+    .list-column { height: 55vh; width: 100%; background: #fff; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    @media (min-width: 401px) { body { flex-direction: row; } #inspector { height: 100vh; width: 55%; border-bottom: none; border-right: 2px solid #ccc; } .list-column { height: 100vh; width: 45%; } }
+    .top-lang-bar, .control-bar, .ai-settings, .footer-bar { flex-shrink: 0; }
+    #listContainer { flex-grow: 1; overflow-y: auto; min-height: 0; padding: 0; border-bottom: 1px solid #ddd; }
+    #settingsMenu { display: none; position: fixed; top: 50px; right: 15px; width: 290px; background: #fff; border: 1px solid #999; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border-radius: 6px; z-index: 999999; padding: 12px; font-size: 11px; }
+    #settingsMenu.show { display: block; }
+    .control-bar { padding: 10px; background: #fff; border-bottom: 1px solid #eee; }
+    .btn { display: block; width: 100%; padding: 8px; margin-bottom: 6px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+    #extractBtn { background: #000; color: #fff; } #auditBtn { background: #2e7d32; color: #fff; transition: background 0.3s;}
+    #auditBtn.btn-stop { background: #b71c1c; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.8; } 100% { opacity: 1; } }
+    .search-input { width: 100%; box-sizing: border-box; padding: 6px; margin-bottom: 6px; border: 1px solid #ddd; border-radius: 6px; display: none; }
+    .stats-row { font-size: 11px; color: #666; display: flex; justify-content: space-between; margin-top: 4px; }
+    .row { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; cursor: pointer; }
+    .row:hover { background: #fafafa; } .row.active { background: #e3f2fd; }
+    .row-name { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0 10px; font-weight: 500;}
+    .ext-link { margin-right: 10px; text-decoration: none; color: #888; } .ext-link:hover { color: #1565c0; }
+    .tag { font-size: 10px; padding: 3px 6px; border-radius: 4px; background: #eee; min-width: 40px; text-align: center; }
+    .tag.red { background: #ffebee; color: #d32f2f; font-weight: bold; } .tag.green { background: #e8f5e9; color: #2e7d32; } .tag.loading { background: #e3f2fd; color: #1565c0; }
+    .proxy-row { display: flex; gap: 5px; margin-bottom: 5px; } .proxy-input { flex: 1; padding: 6px; border: 1px solid #aaa; border-radius: 3px; font-size: 11px; width: 100%; box-sizing: border-box;}
+    .ai-settings { padding: 10px; background: #f0f4c3; border-top: 1px solid #dce775; font-size: 11px; }
+    .ai-controls { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+    .api-input { width: 100%; padding: 5px; border: 1px solid #bbb; border-radius: 4px; box-sizing: border-box; }
+    .remove-key-btn { background: #d32f2f; color: white; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 10px; align-self: flex-start; }
+    .status-saved { color: green; font-weight: bold; } .status-missing { color: #d32f2f; font-weight: bold; }
+    select { width: 100%; padding: 3px; border-radius: 4px; border: 1px solid #ccc; font-size: 11px;}
+    .footer-bar { padding: 8px; background: #f5f5f5; border-top: 1px solid #ddd; text-align: center; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+    .link-btn { background: none; border: none; text-decoration: underline; cursor: pointer; color: #555; font-size: 11px; padding: 0; } .link-btn:hover { color: #000; }
+    .icon-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 14px; padding: 2px 6px; transition: background 0.2s; } .icon-btn:hover { background: #e0e0e0; }
+    #toast { visibility: hidden; min-width: 200px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 10px; position: absolute; z-index: 2000; left: 50%; bottom: 60px; transform: translateX(-50%); font-size: 13px; }
+    #toast.show { visibility: visible; }
+  </style>
+</head>
+<body>
+  <div id="inspector"><div class="ins-empty" data-i18n="selectUser">Select a user to audit.</div></div>
+  <div class="list-column">
+    <div class="top-lang-bar" style="background:#fff; border-bottom:1px solid #eee; padding:5px; display:flex; justify-content:flex-end; align-items:center; gap:8px;">
+        <select id="langSelector" style="width:auto; font-size:10px;">
+         <option value="en">English (US)</option>
+         <option value="zh_TW">繁體中文</option>
+         <option value="zh_CN">简体中文</option>
+         <option value="jp">日本語</option> <option value="ko">한국어</option>
+       </select>
+       <button id="settingsToggleBtn" style="border:none; background:none; cursor:pointer; font-size:16px;">⚙️</button>
+    </div>
+
+    <div id="settingsMenu">
+       <div style="margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid #eee;">
+          <strong data-i18n="settings">Settings</strong>
+          <button id="closeSettingsBtn" style="float:right; border:none; background:none; cursor:pointer;">✕</button>
+       </div>
+       <div style="margin-bottom:12px;">
+         <label style="display:flex; align-items:center; cursor:pointer;">
+           <input type="checkbox" id="privacyCheck"> <span style="margin-left:6px;" data-i18n="privacyMode">Privacy Mode</span>
+         </label>
+       </div>
+       <div style="background:#f5f5f5; padding:8px; border-radius:4px;">
+           <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+             <strong data-i18n="proxyTitle">Proxy Settings</strong>
+           </div>
+           <div style="margin-bottom:8px; color:#666; font-style:italic; font-size:10px;" data-i18n="proxyHelp">Manual SOCKS5 (VPN/Premium) or Auto-fill Free.</div>
+           <div style="display:flex; gap:5px; margin-bottom:10px;">
+               <button id="fetchProxyBtn" class="btn" style="background:#0288d1; color:white; font-size:10px; padding:4px; margin:0; flex-grow:1;" data-i18n="getFreeProxy">🪄 Get Free Proxy</button>
+           </div>
+           <div style="margin-bottom:5px;">
+             <label style="font-size:10px;"><input type="checkbox" id="proxyEnabled"> <span data-i18n="proxyEnabled">Enable</span></label>
+           </div>
+           <div id="proxyInputs" style="display:none;">
+              <div class="proxy-row">
+                <select id="proxyProto" class="proxy-input" style="flex:0.6;"><option value="SOCKS5" selected>SOCKS5</option><option value="PROXY">HTTP/HTTPS</option></select>
+                <input type="text" id="proxyHost" class="proxy-input" placeholder="IP / Host" data-i18n="proxyHost">
+                <input type="text" id="proxyPort" class="proxy-input" placeholder="Port" style="flex:0.4;" data-i18n="proxyPort">
+              </div>
+              <div class="proxy-row">
+                <input type="text" id="proxyUser" class="proxy-input" placeholder="User" data-i18n="proxyUser" style="width:100%;">
+              </div>
+              <div class="proxy-row">
+                <input type="password" id="proxyPass" class="proxy-input" placeholder="Pass" data-i18n="proxyPass" style="width:100%;">
+              </div>
+              <button id="saveProxyBtn" class="btn" style="padding:6px; font-size:11px; margin:5px 0 0; background:#333; color:#fff;" data-i18n="saveKey">Save Settings</button>
+           </div>
+           <div style="margin-top:8px; color:#d32f2f; font-size:10px; font-style:italic; border-top:1px solid #ddd; padding-top:4px;" data-i18n="proxyNote">Note: AI analysis uses original IP (Direct).</div>
+       </div>
+    </div>
+
+    <div class="control-bar">
+      <button id="extractBtn" class="btn" data-i18n="extract">Extract List</button>
+      <div style="display:flex; gap:5px; margin-bottom:6px;">
+        <input type="text" id="userSearch" class="search-input" style="margin-bottom:0; flex-grow:1; display:none;" placeholder="Search username...">
+        <button id="filterRiskBtn" class="btn" style="width:auto; margin-bottom:0; background:#d32f2f; color:#fff; display:none; padding: 6px 10px; font-size:11px; white-space: nowrap;" data-i18n="filterRisk">⚠️ Risk Only</button>
+      </div>
+      <button id="auditBtn" class="btn" data-i18n="audit">Audit Selected</button>
+      <div class="stats-row" id="statsRow" style="display:none">
+        <label><input type="checkbox" id="selectAll" checked> <span data-i18n="selectAll">Select All</span></label>
+        <span id="countLabel">0 users</span>
+      </div>
+    </div>
+    <div id="listContainer"></div>
+    <div class="ai-settings">
+      <div style="margin-bottom:6px; display:flex; justify-content:space-between;">
+        <strong data-i18n="aiTitle">AI Analysis</strong>
+        <span id="keyStatus"></span>
+      </div>
+      <select id="aiProviderSelector">
+        <option value="disabled" data-i18n="aiDisabled">Disabled (Fastest)</option>
+        <option value="cloud" data-i18n="aiCloud">Google Gemini API (Cloud)</option>
+        <option value="puter">Puter.js (Free / No Key)</option>
+      </select>
+      <div id="cloudControls" class="ai-controls" style="display:none;">
+        <div style="border-bottom:1px solid #dce775; padding-bottom:6px; margin-bottom:2px; display:flex; gap:5px; align-items:end;">
+           <div style="flex-grow:1;">
+             <label style="font-size:10px; color:#666; font-weight:bold; display:block; margin-bottom:2px;" data-i18n="modelVersion">MODEL VERSION:</label>
+             <select id="cloudModelSelector">
+               <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Recommended)</option>
+               <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+               <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+               <option value="gemini-3-pro-preview">Gemini 3.0 Pro Preview</option>
+             </select>
+           </div>
+           <button id="refreshGeminiBtn" style="border:1px solid #ccc; background:#fff; cursor:pointer; padding:3px 6px; border-radius:4px;">🔄</button>
+        </div>
+        <div id="aiInputArea">
+          <input type="password" id="apiKeyInput" class="api-input" placeholder="Paste Gemini API Key...">
+          <button id="saveKeyBtn" class="btn" style="margin:5px 0 0; padding:5px; font-size:11px; background:#333;" data-i18n="saveKey">Save Key</button>
+        </div>
+        <div id="aiRemoveArea" style="display:none;">
+          <button id="removeKeyBtn" class="remove-key-btn" data-i18n="removeKey">Remove Saved Key</button>
+        </div>
+      </div>
+      
+      <div id="puterControls" class="ai-controls" style="display:none;">
+         <div style="border-bottom:1px solid #dce775; padding-bottom:6px; margin-bottom:2px;">
+           <label style="font-size:10px; color:#666; font-weight:bold; display:block; margin-bottom:2px;" data-i18n="modelVersion">MODEL VERSION:</label>
+           <select id="puterModelSelector">
+             <option value="gpt-5-nano" selected>GPT-5 Nano (Default)</option>
+             <option value="gpt-4o-mini">GPT-4o Mini</option>
+             <option value="gpt-4o">GPT-4o</option>
+             <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+             <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+             <option value="mistral-large-latest">Mistral Large</option>
+             <option value="deepseek-chat">DeepSeek Chat</option>
+           </select>
+         </div>
+         <div style="padding:5px 0; color:#666; font-size:10px;" data-i18n="puterPower">
+           Powered by Puter.js. No API key required.
+         </div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <button id="exportBtn" class="link-btn" data-i18n="export">Backup JSON</button>
+      <button id="importBtn" class="link-btn" data-i18n="import">Import</button>
+      
+      <div style="width: 1px; background: #ccc; height: 14px;"></div>
+      
+      <button id="exportCsvBtn" class="icon-btn" title="Export CSV (Risk Sorted)">📊</button>
+      
+      <div style="width: 1px; background: #ccc; height: 14px;"></div>
+      
+      <button id="clearCacheBtn" class="link-btn" style="color:#d32f2f;" data-i18n="clear">Clear</button>
+      <input type="file" id="importFileInput" style="display:none" accept=".json">
+    </div>
+    <div id="toast"></div>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>
