@@ -76,5 +76,9 @@
   "errUnknown": "不明",
   "viewDebug": "デバッグログを表示",
   "errModalMissing": "❌ フォロワーリストが見つかりません。\n先にフォロワーリストを開いてください。",
-  "errListEmpty": "リストは開いていますが空です。スクロールして名前を読み込んでください。"
+  "errListEmpty": "リストは開いていますが空です。スクロールして名前を読み込んでください。",
+  "confirmClear": "フォロワーリストをクリアしてもよろしいですか？",
+  "clearList": "リストをクリア",
+  "errOpenProfile": "先にThreadsのプロフィールを開いてください。",
+  "errConnect": "ページへの接続エラー。"
 }

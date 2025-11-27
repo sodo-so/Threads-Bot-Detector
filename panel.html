@@ -115,8 +115,11 @@
         <button id="filterRiskBtn" class="btn" style="width:auto; margin-bottom:0; background:#d32f2f; color:#fff; display:none; padding: 6px 10px; font-size:11px; white-space: nowrap;" data-i18n="filterRisk">⚠️ Risk Only</button>
       </div>
       <button id="auditBtn" class="btn" data-i18n="audit">Audit Selected</button>
-      <div class="stats-row" id="statsRow" style="display:none">
-        <label><input type="checkbox" id="selectAll" checked> <span data-i18n="selectAll">Select All</span></label>
+      <div class="stats-row" id="statsRow" style="display:none; align-items:center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <label><input type="checkbox" id="selectAll" checked> <span data-i18n="selectAll">Select All</span></label>
+          <button id="clearListBtn" style="border:none; background:none; cursor:pointer; font-size:14px; padding:0 4px;" title="Clear List">🗑️</button>
+        </div>
         <span id="countLabel">0 users</span>
       </div>
     </div>

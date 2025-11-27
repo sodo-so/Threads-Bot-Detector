@@ -76,5 +76,9 @@
   "errUnknown": "알 수 없음",
   "viewDebug": "디버그 로그 보기",
   "errModalMissing": "❌ 팔로워 목록을 찾을 수 없습니다.\n먼저 팔로워 목록을 열어주세요.",
-  "errListEmpty": "목록이 비어 있습니다. 이름을 로드하려면 스크롤하세요."
+  "errListEmpty": "목록이 비어 있습니다. 이름을 로드하려면 스크롤하세요.",
+  "confirmClear": "팔로워 목록을 지우시겠습니까?",
+  "clearList": "목록 지우기",
+  "errOpenProfile": "먼저 Threads 프로필을 열어주세요.",
+  "errConnect": "페이지 연결 오류."
 }

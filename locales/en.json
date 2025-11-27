@@ -76,5 +76,9 @@
   "errUnknown": "Unknown",
   "viewDebug": "View Debug Log",
   "errModalMissing": "❌ Followers list not open.\nPlease open the followers list first.",
-  "errListEmpty": "List open, but empty. Scroll down to load names."
+  "errListEmpty": "List open, but empty. Scroll down to load names.",
+  "confirmClear": "Are you sure you want to clear the follower list?",
+  "clearList": "Clear List",
+  "errOpenProfile": "Open Threads profile first.",
+  "errConnect": "Error connecting to page."
 }

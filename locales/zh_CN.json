@@ -76,5 +76,9 @@
   "errUnknown": "未知",
   "viewDebug": "查看调试日志",
   "errModalMissing": "❌ 未找到粉丝列表。\n请先打开粉丝列表窗口。",
-  "errListEmpty": "列表已打开但为空，请向下滚动以加载名称。"
+  "errListEmpty": "列表已打开但为空，请向下滚动以加载名称。",
+  "confirmClear": "确定要清空粉丝列表吗？",
+  "clearList": "清空列表",
+  "errOpenProfile": "请先打开 Threads 个人主页。",
+  "errConnect": "连接页面时发生错误。"
 }

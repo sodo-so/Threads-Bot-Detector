@@ -76,5 +76,9 @@
   "errUnknown": "未知",
   "viewDebug": "檢視偵錯日誌",
   "errModalMissing": "❌ 未找到粉絲列表。\n請先打開粉絲列表視窗。",
-  "errListEmpty": "列表已打開但為空，請向下滾動以加載名稱。"
+  "errListEmpty": "列表已打開但為空，請向下滾動以加載名稱。",
+  "confirmClear": "確定要清空粉絲列表嗎？",
+  "clearList": "清空列表",
+  "errOpenProfile": "請先開啟 Threads 個人檔案。",
+  "errConnect": "連線頁面時發生錯誤。"
 }

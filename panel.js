@@ -44,6 +44,9 @@ function updateUILanguage() {
 
   const debugBtn = document.getElementById("showDebugBtn");
   if(debugBtn) debugBtn.innerText = t("viewDebug");
+
+  const clearBtn = document.getElementById("clearListBtn");
+  if(clearBtn) clearBtn.title = t("clearList");
 }
 
 document.getElementById("langSelector").addEventListener("change", (e) => {
@@ -310,17 +313,26 @@ document.getElementById("importFileInput").addEventListener("change", (event) =>
   reader.onload = (e) => {
     try {
       const json = JSON.parse(e.target.result);
-      if (json.users) { extractedUsers = Array.from(new Set([...extractedUsers, ...json.users])); chrome.storage.local.set({ "saved_users": extractedUsers }); }
+      
+      // MODIFIED: Overwrite extractedUsers instead of merging
+      if (json.users) { 
+          extractedUsers = json.users; // Replaces previous data
+          chrome.storage.local.set({ "saved_users": extractedUsers }); 
+      }
+      
+      // ... existing code ...
       if (json.cache) auditCache = { ...auditCache, ...json.cache };
       chrome.storage.local.set({ "audit_db": auditCache });
       renderList(extractedUsers); updateCount();
-      document.getElementById("userSearch").style.display = "block"; document.getElementById("filterRiskBtn").style.display = "block"; document.getElementById("auditBtn").style.display = "block"; document.getElementById("statsRow").style.display = "flex";
+      document.getElementById("userSearch").style.display = "block"; 
+      document.getElementById("filterRiskBtn").style.display = "block"; 
+      document.getElementById("auditBtn").style.display = "block"; 
+      document.getElementById("statsRow").style.display = "flex";
       showToast(`${t("imported")}. Users: ${extractedUsers.length}`);
     } catch (err) { showToast(t("invalidJson")); }
     event.target.value = "";
   }; reader.readAsText(file);
 });
-
 // --- AI UI LOGIC ---
 const providerSelector = document.getElementById("aiProviderSelector");
 const cloudModelSelector = document.getElementById("cloudModelSelector");
@@ -387,14 +399,17 @@ document.getElementById("removeKeyBtn").addEventListener("click", () => { chrome
 
 document.getElementById("extractBtn").addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab.url.includes("threads")) return showToast("Open Threads profile first.");
+  
+  // MODIFIED: Use translation key
+  if (!tab.url.includes("threads")) return showToast(t("errOpenProfile")); 
+  
   chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }, () => {
     chrome.tabs.sendMessage(tab.id, { action: "extract_followers" }, (res) => {
-      if (chrome.runtime.lastError) return showToast("Error connecting to page");
       
-      // --- TRANSLATION FIX ---
+      // MODIFIED: Use translation key
+      if (chrome.runtime.lastError) return showToast(t("errConnect")); 
+      
       if (!res || !res.success) {
-          // Check if the error string is a key in our translation file
           const errorMsg = t(res?.error) || res?.error || "Unknown Error";
           return showToast(errorMsg);
       }
@@ -565,4 +580,27 @@ function updateTag(tag, data) { tag.className = data.score >= 40 ? "tag red" : "
 function updateCount() { document.getElementById("countLabel").innerText = `${document.querySelectorAll(".user-check:checked").length} selected`; }
 function showToast(msg) { const t = document.getElementById("toast"); t.innerText = msg; t.className = "show"; setTimeout(() => t.className="", 5000); }
 document.getElementById("selectAll").addEventListener("change", (e) => { document.querySelectorAll(".user-check").forEach(b => b.checked = e.target.checked); updateCount(); });
+// --- CLEAR LIST BUTTON ---
+document.getElementById("clearListBtn").addEventListener("click", () => {
+    // 1. Confirm with user using translation
+    if (!confirm(t("confirmClear"))) return;
+
+    // 2. Clear Data
+    extractedUsers = [];
+    chrome.storage.local.set({ "saved_users": [] });
+
+    // 3. Clear UI
+    renderList([]);
+    updateCount();
+
+    // 4. Hide Controls (Reset to initial state)
+    document.getElementById("userSearch").style.display = "none";
+    document.getElementById("filterRiskBtn").style.display = "none";
+    document.getElementById("auditBtn").style.display = "none";
+    document.getElementById("statsRow").style.display = "none";
+
+    // 5. Show Feedback
+    showToast(t("cleared"));
+});
+
 document.getElementById("clearCacheBtn").addEventListener("click", () => { chrome.storage.local.remove("audit_db"); auditCache = {}; document.querySelectorAll(".tag").forEach(t => { t.innerText="Pending"; t.className="tag"; }); showToast(t("cleared")); });
