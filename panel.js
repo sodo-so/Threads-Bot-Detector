@@ -20,7 +20,7 @@ const PROXY_SOURCES = [
     "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
 ];
 
-// Inject CSS
+// --- CSS INJECTION (Responsive & Privacy) ---
 const styleSheet = document.createElement("style");
 styleSheet.innerText = `
   .row.skipped { background: #f5f5f5 !important; opacity: 0.6; }
@@ -46,7 +46,7 @@ styleSheet.innerText = `
   /* Responsive Header Layout */
   .ins-header {
       display: flex !important;
-      flex-wrap: wrap !important; /* Allows items to drop to next line */
+      flex-wrap: wrap !important;
       align-items: center !important;
       justify-content: space-between !important;
       gap: 8px !important;
@@ -56,17 +56,21 @@ styleSheet.innerText = `
   .ins-user-wrapper {
       display: flex;
       align-items: center;
-      flex: 1 1 auto; /* Grows to fill space */
-      min-width: 140px; /* Minimum width before wrapping occurs */
+      flex: 1 1 auto;
+      min-width: 140px;
       margin-right: 4px;
       overflow: hidden;
+      text-decoration: none; 
+      color: inherit; 
+      cursor: pointer;
   }
+  .ins-user-wrapper:hover { opacity: 0.8; }
 
   .ins-action-wrapper {
       display: flex;
       gap: 6px;
-      flex: 0 0 auto; /* Buttons don't shrink */
-      margin-left: auto; /* Pushes buttons to the right */
+      flex: 0 0 auto;
+      margin-left: auto;
   }
 `;
 document.head.appendChild(styleSheet);
@@ -88,16 +92,19 @@ function t(key) {
 }
 
 function updateUILanguage() {
+    // 1. Text Content
     document.querySelectorAll("[data-i18n]").forEach(el => {
         const key = el.getAttribute("data-i18n");
         if (translations[key]) el.innerText = translations[key];
     });
 
+    // 2. Placeholders
     document.querySelectorAll("[data-i18n-ph]").forEach(el => {
         const key = el.getAttribute("data-i18n-ph");
         if (translations[key]) el.placeholder = translations[key];
     });
 
+    // 3. Dynamic Elements
     if (document.getElementById("universalInput")) {
         document.getElementById("universalInput").placeholder = t("universalPh");
     }
@@ -115,6 +122,14 @@ function updateUILanguage() {
 
     const clearBtn = document.getElementById("clearListBtn");
     if (clearBtn) clearBtn.title = t("clearList");
+
+    const batchRemoveBtn = document.getElementById("batchRemoveBtn");
+    if (batchRemoveBtn) batchRemoveBtn.title = t("batchRemoveTitle");
+
+    // 4. Live Refresh of Tags
+    if (typeof renderList === "function" && extractedUsers.length > 0) {
+        renderList(extractedUsers);
+    }
 }
 
 const langSelector = document.getElementById("langSelector");
@@ -126,7 +141,7 @@ if(langSelector) {
     });
 }
 
-// --- HELPERS ---
+// --- DIALOG HELPERS ---
 function showConfirm(message, yesText = "OK", noText = "Cancel") {
     return new Promise((resolve) => {
         const dialog = document.getElementById("appDialog");
@@ -173,6 +188,7 @@ function showAlert(message) {
     dialog.showModal();
 }
 
+// --- UI HELPER ---
 function toggleUI(show) {
     const display = show ? "block" : "none";
     const flexDisplay = show ? "flex" : "none";
@@ -180,20 +196,23 @@ function toggleUI(show) {
     if(document.getElementById("statsRow")) document.getElementById("statsRow").style.display = flexDisplay;
 }
 
-// --- INIT ---
-chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode"], (data) => {
+// --- INIT (Async to wait for Lang) ---
+chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode"], async (data) => {
     auditCache = data.audit_db || {};
+    
+    // 1. Load Language FIRST
     if (data.ui_lang) {
         currentLang = data.ui_lang;
         const ls = document.getElementById("langSelector");
         if(ls) ls.value = currentLang;
     }
-    loadLanguage(currentLang);
+    await loadLanguage(currentLang);
 
     if (data.skipped_users) {
         skippedUsers = new Set(data.skipped_users);
     }
 
+    // 2. Render List AFTER Lang
     if (data.saved_users && Array.isArray(data.saved_users)) {
         extractedUsers = data.saved_users;
         renderList(extractedUsers);
@@ -313,7 +332,7 @@ if(document.getElementById("refreshGeminiBtn")) {
     document.getElementById("refreshGeminiBtn").addEventListener("click", populateGeminiModels);
 }
 
-// --- SETTINGS ---
+// --- SETTINGS UI ---
 if(document.getElementById("settingsToggleBtn")) {
     document.getElementById("settingsToggleBtn").addEventListener("click", () => document.getElementById("settingsMenu").classList.toggle("show"));
 }
@@ -412,12 +431,9 @@ if(document.getElementById("exportCsvBtn")) {
         if (Object.keys(auditCache).length === 0 && extractedUsers.length === 0) return showToast(t("nothingExport"));
         let csvContent = "\uFEFFUsername,Risk Score,Risk Level,Profile URL,Last Audit,AI/Rules Note\n";
         const allUsers = Array.from(new Set([...extractedUsers, ...Object.keys(auditCache)]));
-        
         const exportData = allUsers.map(user => {
             const data = auditCache[user];
             const isSkipped = skippedUsers.has(user);
-            
-            // ... (Risk Level Logic) ...
             let riskLevel = "N/A";
             let riskScore = 0;
             
@@ -425,29 +441,23 @@ if(document.getElementById("exportCsvBtn")) {
                 riskLevel = "SKIPPED"; riskScore = ""; 
             } else if (data) {
                 if (data.manualChecked) {
-                    riskLevel = "CHECKED"; 
-                    riskScore = data.score; 
+                    riskLevel = "CHECKED"; riskScore = data.score; 
                 } else {
                     riskScore = data.score || 0; 
                     riskLevel = data.score >= 40 ? "HIGH" : "LOW"; 
                 }
             }
-
             return {
-                user: user, 
-                score: riskScore, 
-                risk: riskLevel, 
-                // FIXED DOMAIN: threads.com
-                link: `https://www.threads.com/@${user}`,
+                user: user, score: riskScore, risk: riskLevel, link: `https://www.threads.com/@${user}`,
                 ai_reason: (data && data.checklist) ? data.checklist.filter(c => typeof c === 'string' ? c.includes("AI") : c.special).map(c => typeof c === 'string' ? c : c.special).join("; ") : "",
                 date: data ? new Date().toLocaleDateString() : "Pending"
             };
         });
-        
-        // ... sort and blob generation code remains same ...
         exportData.sort((a, b) => {
-             // ... existing sort logic ...
-             return a.user.localeCompare(b.user);
+            if (a.risk === "SKIPPED" && b.risk !== "SKIPPED") return 1;
+            if (a.risk !== "SKIPPED" && b.risk === "SKIPPED") return -1;
+            if (b.score !== a.score) return b.score - a.score;
+            return a.user.localeCompare(b.user);
         });
         exportData.forEach(row => {
             const safeReason = `"${row.ai_reason.replace(/"/g, '""')}"`;
@@ -486,9 +496,18 @@ if(document.getElementById("importFileInput")) {
                     else skippedUsers.clear();
                 }
                 chrome.storage.local.set({ "saved_users": extractedUsers, "audit_db": auditCache, "skipped_users": Array.from(skippedUsers) });
+                
                 renderList(extractedUsers);
                 updateCount();
                 toggleUI(true);
+
+                // REFRESH INSPECTOR IF OPEN
+                const currentNameEl = document.querySelector(".ins-header .ins-user-wrapper div:last-child");
+                if (currentNameEl) {
+                    const currentUsername = currentNameEl.innerText.replace("@", "").replace(" ↗", "").trim();
+                    if (auditCache[currentUsername]) renderInspector(auditCache[currentUsername]);
+                }
+
                 showToast(`${t("imported")}. Users: ${extractedUsers.length}`);
             } catch (err) { console.error(err); showToast(t("invalidJson")); }
             event.target.value = "";
@@ -579,62 +598,29 @@ if(document.getElementById("removeKeyBtn")) {
     document.getElementById("removeKeyBtn").addEventListener("click", () => { chrome.storage.local.remove("enc_api_key", () => { geminiKey = null; updateAIUI(); showToast(t("keyRemoved")); }); });
 }
 
-// --- MANUAL ADD USER ---
+// --- ADD/SEARCH ---
 const manualAddBtn = document.getElementById("addManualUserBtn");
 const universalInput = document.getElementById("universalInput");
 
 if(manualAddBtn && universalInput) {
     manualAddBtn.addEventListener("click", () => {
         const rawValue = universalInput.value.trim();
-        
-        // 1. Validate
-        if (!rawValue) return; 
-
-        // Cleanup: Remove @, spaces, and URL parts
-        let username = rawValue.replace('@', '')
-                               .replace('threads.net/', '')
-                               .replace('threads.com/', '')
-                               .replace('https://www.', '')
-                               .replace('https://', '')
-                               .replace(/\/$/, "");
-
+        if (!rawValue) return;
+        let username = rawValue.replace('@', '').replace('threads.net/', '').replace('threads.com/', '').replace('https://www.', '').replace('https://', '').replace(/\/$/, "");
         const isValid = /^[a-zA-Z0-9._]{1,30}$/.test(username);
-
-        if (!isValid) {
-            return showToast(t("errInvalidUser"));
-        }
-
-        if (extractedUsers.includes(username)) {
-            return showToast(t("errUserExists").replace("{user}", username));
-        }
-
-        // 2. Add & Save
+        if (!isValid) return showToast(t("errInvalidUser"));
+        if (extractedUsers.includes(username)) return showToast(t("errUserExists").replace("{user}", username));
         extractedUsers.push(username);
         chrome.storage.local.set({ "saved_users": extractedUsers });
-
-        // 3. Update UI
         renderList(extractedUsers);
         
-        // Apply filters immediately. Since the username is still in the input, 
-        // the list will filter to show ONLY the user you just added (visual confirmation).
+        universalInput.value = "";
         applyFilters(); 
         toggleUI(true);
-
         showToast(t("msgUserAdded").replace("{user}", username));
-
-        // 4. Highlight the input text (User request)
-        // This keeps the text but selects it all, so typing immediately replaces it.
-        universalInput.focus();
-        universalInput.select();
+        universalInput.focus(); universalInput.select();
     });
-
-    // Handle "Enter" key
-    universalInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-            e.preventDefault(); 
-            manualAddBtn.click();
-        }
-    });
+    universalInput.addEventListener("keypress", (e) => { if (e.key === "Enter") { e.preventDefault(); manualAddBtn.click(); } });
 }
 
 function applyFilters() {
@@ -734,7 +720,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 });
 
-// --- AUDIT EXECUTION LOOP ---
+// --- AUDIT LOOP ---
 if(document.getElementById("auditBtn")) {
     document.getElementById("auditBtn").addEventListener("click", async () => {
         const btn = document.getElementById("auditBtn");
@@ -748,59 +734,32 @@ if(document.getElementById("auditBtn")) {
 
         if (!checkboxes.length) return showToast(t("selectUser"));
 
-        isAuditing = true; 
-        stopAuditRequested = false; 
-        btn.innerText = t("stopAudit"); 
-        btn.classList.add("btn-stop");
-        
+        isAuditing = true; stopAuditRequested = false; btn.innerText = t("stopAudit"); btn.classList.add("btn-stop");
         document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("batchStart")}</div>`;
 
         for (let i = 0; i < checkboxes.length; i++) {
-            // Check stop flag at start of iteration
             if (stopAuditRequested) break;
-
-            const row = checkboxes[i].closest(".row"); 
-            const username = row.getAttribute("data-user");
+            const row = checkboxes[i].closest(".row"); const username = row.getAttribute("data-user");
             row.scrollIntoView({ behavior: "smooth", block: "center" });
 
             let delay = 0;
             if (aiProvider === 'disabled' && !auditCache[username]) { delay = 50; }
 
-            // EXECUTE AUDIT - WAIT FOR RESULT
             const success = await performAudit(username, row);
-            
-            // IF FAILED/CRITICAL ERROR -> STOP LOOP IMMEDIATELY
-            if (success === false) {
-                stopAuditRequested = true;
-                // Toast is handled inside performAudit
-                break;
-            }
+            if (success === false) { stopAuditRequested = true; break; }
 
             if (delay > 0) await new Promise(r => setTimeout(r, delay));
         }
-
-        isAuditing = false; 
-        btn.innerText = t("audit"); 
-        btn.classList.remove("btn-stop");
-        
-        if (stopAuditRequested) showToast(t("auditStopped")); 
-        else showToast(t("auditComplete"));
-        
+        isAuditing = false; btn.innerText = t("audit"); btn.classList.remove("btn-stop");
+        if (stopAuditRequested) showToast(t("auditStopped")); else showToast(t("auditComplete"));
         if (isRiskFilter) applyFilters();
     });
 }
 
 async function performAudit(username, rowElement, isRetry = false) {
     const tag = rowElement.querySelector(".tag");
-    document.querySelectorAll(".row").forEach(r => r.classList.remove("active")); 
-    rowElement.classList.add("active");
-    
-    // 1. CACHE CHECK (Skip logic if already done, unless retrying)
-    if (auditCache[username] && !isRetry) { 
-        renderInspector(auditCache[username]); 
-        updateTag(tag, auditCache[username]); 
-        return true; // Continue loop
-    }
+    document.querySelectorAll(".row").forEach(r => r.classList.remove("active")); rowElement.classList.add("active");
+    if (auditCache[username] && !isRetry) { renderInspector(auditCache[username]); updateTag(tag, auditCache[username]); return true; }
     
     tag.innerText = isRetry ? "RETRY..." : "..."; 
     tag.className = "tag loading";
@@ -809,174 +768,70 @@ async function performAudit(username, rowElement, isRetry = false) {
     const isCloud = (currentProvider === "cloud");
     const isPuter = (currentProvider === "puter");
 
-    // 2. PRE-FLIGHT CHECKS
-    if (isCloud && !geminiKey) {
-        showToast(t("enterKey"));
-        return false; // STOP
-    }
+    if (isCloud && !geminiKey) { showToast(t("enterKey")); return false; }
     if (isPuter && !puterSignedIn) {
-        try { 
-            await puter.auth.signIn(); 
-            puterSignedIn = true; 
-            updateAIUI(); 
-        } catch (e) { 
-            tag.innerText = t("statusAuth"); 
-            tag.className = "tag"; 
-            showToast(t("puterSignInReq")); 
-            return false; // STOP
-        }
+        try { await puter.auth.signIn(); puterSignedIn = true; updateAIUI(); }
+        catch (e) { tag.innerText = t("statusAuth"); tag.className = "tag"; showToast(t("puterSignInReq")); return false; }
     }
 
     try {
         let res = await chrome.runtime.sendMessage({
-            action: "silent_audit", 
-            username: username, 
-            apiKey: isCloud ? geminiKey : null,
-            cloudModelId: cloudModelSelector.value, 
-            skipCloudAI: !isCloud,
-            language: currentLang
+            action: "silent_audit", username: username, apiKey: isCloud ? geminiKey : null,
+            cloudModelId: cloudModelSelector.value, skipCloudAI: !isCloud, language: currentLang
         });
 
         if (res && res.success) {
-            // --- STRICT ERROR CHECKING & RETRY LOGIC ---
-            
-            // A. CLOUD AI SPECIFIC CHECKS
             if (isCloud && res.debugLog) {
-                const logs = res.debugLog.join(" "); 
-                
-                // Check 1: API Errors (Quota/Key)
+                const logs = res.debugLog.join(" ");
                 if (logs.includes("AI Error")) {
-                    const rawMsg = res.debugLog.find(l => l.includes("AI Error")) || "AI Error";
-                    const errMsg = t("errAiMsg").replace("{msg}", rawMsg.replace("AI Error:", "").trim());
-                    
-                    if (!isRetry) {
-                        // --- RETRY LOGIC START ---
-                        showToast(t("msgRetrying"));
-                        tag.innerText = "WAIT 60s"; 
-                        tag.className = "tag"; // Grey tag for waiting
-                        await new Promise(r => setTimeout(r, 60000)); // 60s Pause
-                        return await performAudit(username, rowElement, true); // Retry Once
-                        // --- RETRY LOGIC END ---
-                    }
-
-                    showToast(errMsg);
-                    tag.innerText = "AI ERR"; tag.className = "tag red";
-                    renderErrorInspector(username, rawMsg);
-                    return false; // STOP LOOP
+                    if (!isRetry) { showToast(t("msgRetrying")); tag.innerText = "WAIT 60s"; tag.className = "tag"; await new Promise(r => setTimeout(r, 60000)); return await performAudit(username, rowElement, true); }
+                    const msg = res.debugLog.find(l => l.includes("AI Error")) || "AI Error";
+                    showToast(t("errAiMsg").replace("{msg}", msg)); tag.innerText = "AI ERR"; tag.className = "tag red"; renderErrorInspector(username, msg); return false;
                 }
-
-                // Check 2: Configuration Mismatch (Disabled unexpectedly)
-                if (logs.includes("AI: Disabled")) {
-                    showToast(t("errAiDisabled"));
-                    tag.innerText = "CFG ERR"; tag.className = "tag red";
-                    return false; // STOP LOOP
-                }
-                
-                // Check 3: Skipped (Key Missing)
-                if (logs.includes("AI: Skipped")) {
-                    showToast(t("errAiSkipped"));
-                    tag.innerText = "NO KEY"; tag.className = "tag red";
-                    return false; // STOP LOOP
-                }
+                if (logs.includes("AI: Disabled")) { showToast(t("errAiDisabled")); tag.innerText = "CFG ERR"; tag.className = "tag red"; return false; }
+                if (logs.includes("AI: Skipped")) { showToast(t("errAiSkipped")); tag.innerText = "NO KEY"; tag.className = "tag red"; return false; }
             }
 
-            // B. PUTER AI SPECIFIC CHECKS
             if (isPuter) {
                 tag.innerText = t("statusAi");
-                
-                const historyText = (res.replyData && res.replyData.history.length > 0) 
-                    ? res.replyData.history.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n") 
-                    : "(No replies)";
-                
+                const historyText = (res.replyData && res.replyData.history.length > 0) ? res.replyData.history.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n") : "(No replies)";
                 const prompt = `Role: Cybersecurity Auditor. Target: @${username}. Bio: "${res.bioSnippet}". Main Post: "${res.mainPost.text}". Replies: ${historyText}. Detect Bot/Farm. JSON: { "bot_probability": number (0-100), "reason": "Short reason in ${currentLang}" }`;
-                
                 try {
                     const selectedModel = document.getElementById("puterModelSelector").value;
                     const aiResp = await puter.ai.chat(prompt, { model: selectedModel });
-                    
-                    if (!aiResp || !aiResp.message) throw new Error("Empty Response");
-
-                    let content = aiResp?.message?.content || "{}"; 
-                    content = content.replace(/```json|```/g, "").trim();
+                    let content = aiResp?.message?.content || "{}"; content = content.replace(/```json|```/g, "").trim();
                     const result = JSON.parse(content);
-                    
                     let score = result.bot_probability || 0;
                     if (score <= 1 && score > 0) score = Math.round(score * 100);
-                    
                     res.score = score;
                     res.checklist.push({ special: `🤖 Puter AI: ${score}/100` });
                     res.debugLog.push(`${t("aiAnalysisLocal")}: ${score}/100 - ${result.reason}`);
                     if (result.reason) res.checklist.push({ special: `📝 ${result.reason}` });
-                
                 } catch (aiErr) { 
-                    console.error("Puter AI Error:", aiErr);
-                    
-                    if (!isRetry) {
-                        // --- RETRY LOGIC START ---
-                        showToast(t("msgRetrying"));
-                        tag.innerText = "WAIT 60s"; 
-                        tag.className = "tag";
-                        await new Promise(r => setTimeout(r, 60000)); 
-                        return await performAudit(username, rowElement, true);
-                        // --- RETRY LOGIC END ---
-                    }
-
-                    tag.innerText = "AI FAIL"; 
-                    tag.className = "tag red";
-                    
-                    res.checklist.push({ special: "⚠️ " + t("aiFailedPuter") });
-                    auditCache[username] = res; 
-                    renderInspector(res); 
-                    
-                    showToast(t("errPuterFail"));
-                    return false; // STOP LOOP
+                    if (!isRetry) { showToast(t("msgRetrying")); tag.innerText = "WAIT 60s"; tag.className = "tag"; await new Promise(r => setTimeout(r, 60000)); return await performAudit(username, rowElement, true); }
+                    tag.innerText = "AI FAIL"; tag.className = "tag red"; res.checklist.push({ special: "⚠️ " + t("aiFailedPuter") }); auditCache[username] = res; renderInspector(res); showToast(t("errPuterFail")); return false; 
                 }
             }
 
-            // SUCCESS PATH
-            auditCache[username] = res; 
-            chrome.storage.local.set({ "audit_db": auditCache });
-            updateTag(tag, res); 
-            renderInspector(res);
-            return true; // CONTINUE LOOP
-
+            auditCache[username] = res; chrome.storage.local.set({ "audit_db": auditCache });
+            updateTag(tag, res); renderInspector(res); return true;
         } else { 
-            // --- C. CRITICAL NETWORK / PROXY ERRORS ---
             const err = res?.error || "Unknown";
-            
-            if (err.includes("Rate Limit") || err.includes("429")) {
-                showToast(t("errRateLimit"));
-                tag.innerText = "429"; tag.className = "tag red";
-                return false; // STOP LOOP
-            }
-            if (err.includes("Proxy")) {
-                showToast(t("errProxyFail"));
-                tag.innerText = "PROXY"; tag.className = "tag red";
-                return false; // STOP LOOP
-            }
-
-            // D. NON-CRITICAL (e.g. 404 User Not Found) -> LOG & CONTINUE
-            tag.innerText = "ERR"; tag.className = "tag"; 
-            renderErrorInspector(username, err);
-            return true; // CONTINUE LOOP
+            if (err.includes("Rate Limit") || err.includes("429")) { showToast(t("errRateLimit")); tag.innerText = "429"; tag.className = "tag red"; return false; }
+            if (err.includes("Proxy")) { showToast(t("errProxyFail")); tag.innerText = "PROXY"; tag.className = "tag red"; return false; }
+            tag.innerText = "ERR"; tag.className = "tag"; renderErrorInspector(username, err); return true; 
         }
-    } catch (e) { 
-        console.error(e);
-        tag.innerText = t("statusFail"); tag.className = "tag"; 
-        return true; // Continue on generic JS errors
-    }
+    } catch (e) { tag.innerText = t("statusFail"); tag.className = "tag"; return true; }
 }
 
 function renderInspector(data) {
     const div = document.getElementById("inspector");
     div.classList.remove("privacy-blur", "privacy-visible");
 
-    // Icons
     const ICON_EYE_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
     const ICON_EYE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
     const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-    // Status logic
     let color = data.score >= 40 ? "d32f2f" : "2e7d32";
     if (data.manualChecked) color = "2e7d32";
 
@@ -985,7 +840,6 @@ function renderInspector(data) {
     const skipIcon = isSkipped ? "↩️" : "🗑️";
     const skipTitle = isSkipped ? t("restoreUser") : t("skipUser");
     
-    // Styles
     const btnBaseStyle = "border:1px solid #ccc; background:#fff; cursor:pointer; font-size:16px; padding:4px 8px; border-radius:4px; height:32px; width:32px; display:flex; align-items:center; justify-content:center;";
     const eyeBtnStyle = `${btnBaseStyle} color:#555;`;
     const removeBtnStyle = `${btnBaseStyle} color:red; border-color:#ffcdd2;`;
@@ -993,7 +847,6 @@ function renderInspector(data) {
     const checkBtnStyle = `${btnBaseStyle} color:${data.manualChecked ? '#fff' : '#2e7d32'}; background:${data.manualChecked ? '#2e7d32' : '#fff'}; border-color:#2e7d32; margin-right:8px;`;
 
     let mainPostHtml = data.mainPost.exists ? `<div class="ins-post-main"><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span class="activity-badge badge-Main">MAIN POST</span><span style="color:#999;font-size:10px;">${data.mainPost.dateStr}</span></div><div style="color:#333;">${data.mainPost.text}</div></div>` : `<div class="ins-post-main" style="border-left:4px solid #d32f2f;background:#ffebee;color:#d32f2f;font-weight:bold;">${t("noMain")}</div>`;
-    
     let replyContentHtml = ""; let avgLabel = "";
     if (data.replyData && data.replyData.exists) {
         const avgColor = (data.replyData.avgLength < 20) ? "d32f2f" : "2e7d32"; avgLabel = `<span style="font-weight:bold;color:#${avgColor}">Avg: ${data.replyData.avgLength}</span>`;
@@ -1011,14 +864,13 @@ function renderInspector(data) {
 
     div.innerHTML = `
     <div class="ins-header">
-        <a href="https://www.threads.com/@${data.username}" target="_blank" class="ins-user-wrapper" style="text-decoration:none; color:inherit; cursor:pointer;" title="Open Profile">
+        <a href="https://www.threads.com/@${data.username}" target="_blank" class="ins-user-wrapper" title="Open Profile">
             <img src="${imgUrl}" class="ins-img">
             <div style="min-width:0;">
                 <div style="font-weight:bold;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${data.realName}</div>
                 <div style="color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">@${data.username} ↗</div>
             </div>
         </a>
-        
         <div class="ins-action-wrapper">
             <button id="insPrivacyBtn" style="${eyeBtnStyle}" title="${t("togglePrivacy")}">${initialEyeIcon}</button>
             <button id="insCheckBtn" style="${checkBtnStyle}" title="${t("markChecked")}">${ICON_CHECK}</button>
@@ -1026,7 +878,6 @@ function renderInspector(data) {
             <button id="insSkipBtn" style="${skipBtnStyle}" title="${skipTitle}">${skipIcon}</button>
         </div>
     </div>
-
     <div class="ins-stats"><span>👥 <b>${data.followerCount}</b></span><span style="color:#${color};font-weight:bold;border:1px solid #${color};padding:0 4px;border-radius:4px;">Risk: ${data.score}/100</span><span>${data.postCount} items</span></div>
     ${aiHtml}
     <ul style="margin:5px 0 15px 0; padding:0; list-style:none; color:#d32f2f; font-size:12px; line-height:1.4;">${ruleHtml}</ul>
@@ -1035,24 +886,16 @@ function renderInspector(data) {
     <div class="ins-post-reply"><div style="color:#999;font-size:10px;margin-bottom:5px;display:flex;justify-content:space-between;"><div><span class="activity-badge badge-Reply">REPLIES</span></div>${avgLabel}</div><div class="reply-list-scroll">${replyContentHtml}</div></div>
     <div style="text-align:right;margin-bottom:10px;"><button id="showDebugBtn" style="font-size:9px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer;padding:3px 8px;border-radius:4px;">${t("viewDebug")}</button></div>`;
 
-    // Handlers (Skip, Remove, Check, Privacy, Debug)
     document.getElementById("insSkipBtn").addEventListener("click", () => { const row = document.querySelector(`.row[data-user="${data.username}"]`); if (row) { toggleSkipUser(data.username, row); renderInspector(data); } });
     document.getElementById("insRemoveBtn").addEventListener("click", () => { if(confirm(t("confirmRemoveUser").replace("{user}", data.username))) { removeUserPermanently(data.username); } });
-    document.getElementById("showDebugBtn").addEventListener("click", () => showAlert("DEBUG LOG:\n\n" + data.debugLog.join('\n')));
     document.getElementById("insCheckBtn").addEventListener("click", () => { toggleCheckedStatus(data.username); });
+    document.getElementById("showDebugBtn").addEventListener("click", () => showAlert("DEBUG LOG:\n\n" + data.debugLog.join('\n')));
 
     const privacyBtn = document.getElementById("insPrivacyBtn");
     privacyBtn.addEventListener("click", () => {
         const isCurrentlyBlurred = getComputedStyle(div.querySelector(".ins-img")).filter.includes("blur");
-        if (isCurrentlyBlurred) {
-            div.classList.remove("privacy-blur");
-            div.classList.add("privacy-visible");
-            privacyBtn.innerHTML = ICON_EYE_OPEN; 
-        } else {
-            div.classList.remove("privacy-visible");
-            div.classList.add("privacy-blur");
-            privacyBtn.innerHTML = ICON_EYE_CLOSED;
-        }
+        if (isCurrentlyBlurred) { div.classList.remove("privacy-blur"); div.classList.add("privacy-visible"); privacyBtn.innerHTML = ICON_EYE_OPEN; } 
+        else { div.classList.remove("privacy-visible"); div.classList.add("privacy-blur"); privacyBtn.innerHTML = ICON_EYE_CLOSED; }
     });
 }
 
@@ -1077,34 +920,14 @@ function renderList(users) {
         const isSkipped = skippedUsers.has(u);
         div.className = isSkipped ? "row skipped" : "row";
         div.setAttribute("data-user", u);
-
         const checkState = isSkipped ? "disabled" : "checked";
-
-        // FIXED DOMAIN: threads.com
         div.innerHTML = `<input type="checkbox" class="user-check" ${checkState}><span class="row-name">@${u}</span><a href="https://www.threads.com/@${u}" target="_blank" class="ext-link">↗</a><span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>`;
-
-        div.querySelector(".row-name").addEventListener("click", () => {
-            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`;
-            performAudit(u, div);
-        });
-
-        // ... (rest of renderList logic) ...
+        div.querySelector(".row-name").addEventListener("click", () => { document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`; performAudit(u, div); });
         const tagBtn = div.querySelector(".tag");
-        tagBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (skippedUsers.has(u)) return;
-            delete auditCache[u];
-            chrome.storage.local.set({ "audit_db": auditCache });
-            tagBtn.innerText = "...";
-            tagBtn.className = "tag loading";
-            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔄 Re-Auditing <span class="loading-user">@${u}</span>...</div>`;
-            performAudit(u, div);
-        });
-
+        tagBtn.addEventListener("click", (e) => { e.stopPropagation(); if (skippedUsers.has(u)) return; delete auditCache[u]; chrome.storage.local.set({ "audit_db": auditCache }); tagBtn.innerText = "..."; tagBtn.className = "tag loading"; document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔄 Re-Auditing <span class="loading-user">@${u}</span>...</div>`; performAudit(u, div); });
         if (auditCache[u]) updateTag(tagBtn, auditCache[u]);
         container.appendChild(div);
     });
-
     if (isRiskFilter) applyFilters();
     document.querySelectorAll(".user-check").forEach(b => b.addEventListener("change", updateCount));
 }
@@ -1119,33 +942,17 @@ function toggleSkipUser(username, row) {
 
 function toggleCheckedStatus(username) {
     if (!auditCache[username]) return;
-
-    // Toggle the boolean flag
     const isChecked = !auditCache[username].manualChecked;
     auditCache[username].manualChecked = isChecked;
-
-    // Save to storage
     chrome.storage.local.set({ "audit_db": auditCache });
-
-    // Update UI
-    renderInspector(auditCache[username]); // Refresh Inspector to show green button
-    
-    // Update List Tag
+    renderInspector(auditCache[username]);
     const row = document.querySelector(`.row[data-user="${username}"]`);
-    if (row) {
-        const tag = row.querySelector(".tag");
-        updateTag(tag, auditCache[username]);
-    }
-
+    if (row) { const tag = row.querySelector(".tag"); updateTag(tag, auditCache[username]); }
     if (isChecked) showToast(t("userMarked"));
 }
 
 function updateTag(tag, data) { 
-    if (data.manualChecked) {
-        tag.className = "tag green";
-        tag.innerText = t("statusChecked") || "CHECKED";
-        return;
-    }
+    if (data.manualChecked) { tag.className = "tag green"; const label = translations["statusChecked"] ? t("statusChecked") : "CHECKED"; tag.innerText = label; return; }
     tag.className = data.score >= 40 ? "tag red" : "tag green"; 
     tag.innerText = data.score >= 40 ? `RISK ${data.score}` : "SAFE"; 
 }
@@ -1168,125 +975,38 @@ if(document.getElementById("clearListBtn")) {
     });
 }
 
-const batchRemoveBtn = document.getElementById("batchRemoveBtn");
-
-if (batchRemoveBtn) {
-    // Set localized tooltip on init
-    batchRemoveBtn.title = t("batchRemoveTitle") || "Remove Selected";
-
-    batchRemoveBtn.addEventListener("click", async () => {
-        // 1. Identify Selected Users
+// BATCH REMOVE
+if(document.getElementById("batchRemoveBtn")) {
+    const btn = document.getElementById("batchRemoveBtn");
+    btn.title = t("batchRemoveTitle") || "Remove Selected";
+    btn.addEventListener("click", async () => {
         const rows = Array.from(document.querySelectorAll(".row"));
-        const checkedUsers = rows
-            .filter(r => r.style.display !== "none") // Only process visible rows
-            .map(r => {
-                const cb = r.querySelector(".user-check");
-                // Only count if checked AND not disabled (skipped users are disabled by default)
-                if (cb && cb.checked && !cb.disabled) {
-                    return r.getAttribute("data-user");
-                }
-                return null;
-            })
-            .filter(Boolean); // Remove nulls
-
-        if (checkedUsers.length === 0) {
-            return showToast(t("selectUser"));
-        }
-
-        // 2. Confirm Action
-        const confirmed = await showConfirm(
-            t("confirmBatchRemove").replace("{count}", checkedUsers.length),
-            t("btnOk"), // "OK" or translated equivalent
-            "Cancel"
-        );
-
+        const checkedUsers = rows.filter(r => r.style.display !== "none").map(r => { const cb = r.querySelector(".user-check"); if (cb && cb.checked && !cb.disabled) return r.getAttribute("data-user"); return null; }).filter(Boolean);
+        if (checkedUsers.length === 0) return showToast(t("selectUser"));
+        const confirmed = await showConfirm(t("confirmBatchRemove").replace("{count}", checkedUsers.length), t("btnOk"), "Cancel");
         if (!confirmed) return;
-
-        // 3. Perform Deletion
-        // Filter out the checked users from the main list
         extractedUsers = extractedUsers.filter(u => !checkedUsers.includes(u));
-        
-        // Clean up cache and skipped sets
-        checkedUsers.forEach(u => {
-            delete auditCache[u];
-            skippedUsers.delete(u);
-        });
-
-        // 4. Save New State
-        chrome.storage.local.set({
-            "saved_users": extractedUsers,
-            "audit_db": auditCache,
-            "skipped_users": Array.from(skippedUsers)
-        });
-
-        // 5. Update UI
-        renderList(extractedUsers);
-        updateCount();
-        
-        // Reset Inspector if it's empty (optional UX polish)
-        if(extractedUsers.length === 0) {
-             document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("selectUser")}</div>`;
-             toggleUI(false);
-        }
-
+        checkedUsers.forEach(u => { delete auditCache[u]; skippedUsers.delete(u); });
+        chrome.storage.local.set({ "saved_users": extractedUsers, "audit_db": auditCache, "skipped_users": Array.from(skippedUsers) });
+        renderList(extractedUsers); updateCount();
+        if(extractedUsers.length === 0) { document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("selectUser")}</div>`; toggleUI(false); }
         showToast(t("batchRemoved").replace("{count}", checkedUsers.length));
     });
 }
 
+// SELECTIVE CACHE CLEAR
 if(document.getElementById("clearCacheBtn")) {
     const clearBtn = document.getElementById("clearCacheBtn");
-    
-    // Add Hint (Tooltip)
-    clearBtn.title = t("clearCacheTitle") || "Clear audit results for selected users";
-
+    clearBtn.title = t("clearCacheTitle") || "Clear results";
     clearBtn.addEventListener("click", () => {
-        // 1. Identify Selected Users
         const rows = Array.from(document.querySelectorAll(".row"));
-        const selectedUsers = rows
-            .filter(r => r.style.display !== "none") // Visible rows only
-            .map(r => {
-                const cb = r.querySelector(".user-check");
-                // Only if checked and NOT disabled (skipped users are disabled)
-                if (cb && cb.checked && !cb.disabled) {
-                    return r.getAttribute("data-user");
-                }
-                return null;
-            })
-            .filter(Boolean); // Remove nulls
-
-        // 2. Validation
-        if (selectedUsers.length === 0) {
-            return showToast(t("selectUser"));
-        }
-
-        // 3. Confirmation
-        if (!confirm(t("confirmClearSelected").replace("{count}", selectedUsers.length))) {
-            return;
-        }
-
-        // 4. Perform Clear Action
-        selectedUsers.forEach(user => {
-            delete auditCache[user]; // Remove from memory object
-            
-            // Visual Update: Reset Tag to Pending
-            const row = document.querySelector(`.row[data-user="${user}"]`);
-            if(row) {
-                const tag = row.querySelector(".tag");
-                tag.className = "tag";
-                tag.innerText = "Pending";
-            }
-        });
-
-        // 5. Save to Storage
+        const selectedUsers = rows.filter(r => r.style.display !== "none").map(r => { const cb = r.querySelector(".user-check"); if (cb && cb.checked && !cb.disabled) return r.getAttribute("data-user"); return null; }).filter(Boolean);
+        if (selectedUsers.length === 0) return showToast(t("selectUser"));
+        if (!confirm(t("confirmClearSelected").replace("{count}", selectedUsers.length))) return;
+        selectedUsers.forEach(user => { delete auditCache[user]; const row = document.querySelector(`.row[data-user="${user}"]`); if(row) { const tag = row.querySelector(".tag"); tag.className = "tag"; tag.innerText = "Pending"; } });
         chrome.storage.local.set({ "audit_db": auditCache });
-
-        // 6. Reset Inspector if the currently viewed user was cleared
-        // (Optional check to avoid showing stale data in inspector)
-        const currentInspectorName = document.querySelector(".ins-header .ins-user-wrapper div:last-child")?.innerText?.replace("@", "");
-        if (currentInspectorName && !auditCache[currentInspectorName]) {
-             document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("selectUser")}</div>`;
-        }
-
+        const currentInspectorName = document.querySelector(".ins-header .ins-user-wrapper div:last-child")?.innerText?.replace("@", "").replace(" ↗", "").trim();
+        if (currentInspectorName && !auditCache[currentInspectorName]) document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("selectUser")}</div>`;
         showToast(t("cacheClearedBatch").replace("{count}", selectedUsers.length));
     });
 }
