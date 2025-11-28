@@ -24,7 +24,7 @@ const styleSheet = document.createElement("style");
 styleSheet.innerText = `
   .row.skipped { background: #f5f5f5 !important; opacity: 0.6; }
   .row.skipped .row-name { text-decoration: line-through; color: #aaa; font-style: italic; }
-  /* Dialog Styles override/additions if needed */
+  /* Dialog Styles */
 `;
 document.head.appendChild(styleSheet);
 
@@ -334,7 +334,14 @@ function saveProxySettings() {
 // --- EXPORT/IMPORT ---
 document.getElementById("exportBtn").addEventListener("click", () => {
   if (extractedUsers.length === 0 && Object.keys(auditCache).length === 0) return showToast(t("nothingExport"));
-  const data = { timestamp: new Date().toISOString(), users: extractedUsers, cache: auditCache };
+  
+  const data = { 
+      timestamp: new Date().toISOString(), 
+      users: extractedUsers, 
+      cache: auditCache,
+      skipped: Array.from(skippedUsers) // Save skipped/deleted state
+  };
+  
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a"); a.href = url; a.download = `threads-audit-backup-${new Date().toISOString().slice(0,10)}.json`;
@@ -346,21 +353,40 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
   if (Object.keys(auditCache).length === 0 && extractedUsers.length === 0) {
       return showToast(t("nothingExport"));
   }
+  
   let csvContent = "\uFEFFUsername,Risk Score,Risk Level,Profile URL,Last Audit,AI/Rules Note\n";
   const allUsers = Array.from(new Set([...extractedUsers, ...Object.keys(auditCache)]));
+  
   const exportData = allUsers.map(user => {
       const data = auditCache[user];
+      const isSkipped = skippedUsers.has(user);
+      
+      // Determine Risk Level
+      let riskLevel = "N/A";
+      let riskScore = 0;
+      
+      if (isSkipped) {
+          riskLevel = "SKIPPED"; // Mark explicitly in CSV
+          riskScore = "";
+      } else if (data) {
+          riskScore = data.score || 0;
+          riskLevel = data.score >= 40 ? "HIGH" : "LOW";
+      }
+
       return {
           user: user,
-          score: data ? (data.score || 0) : 0,
-          risk: data ? (data.score >= 40 ? "HIGH" : "LOW") : "N/A",
+          score: riskScore,
+          risk: riskLevel,
           link: `https://www.threads.net/@${user}`,
           ai_reason: (data && data.checklist) ? data.checklist.filter(c => typeof c === 'string' ? c.includes("AI") : c.special).map(c => typeof c === 'string' ? c : c.special).join("; ") : "",
           date: data ? new Date().toLocaleDateString() : "Pending"
       };
   });
 
+  // Sort: Skipped last, then by Score desc, then Username asc
   exportData.sort((a, b) => {
+      if (a.risk === "SKIPPED" && b.risk !== "SKIPPED") return 1;
+      if (a.risk !== "SKIPPED" && b.risk === "SKIPPED") return -1;
       if (b.score !== a.score) return b.score - a.score;
       return a.user.localeCompare(b.user);
   });
@@ -397,27 +423,42 @@ document.getElementById("importFileInput").addEventListener("change", (event) =>
       let doMerge = false;
 
       if (hasData) {
-          // Pass translated button labels here
           doMerge = await showConfirm(
               t("importPrompt"), 
-              t("btnMerge"),      // "Merge" / "合并"
-              t("btnOverwrite")   // "Overwrite" / "覆盖"
+              t("btnMerge"), 
+              t("btnOverwrite")
           );
       }
 
       if (doMerge) {
+          // --- MERGE LOGIC ---
           if (json.users) extractedUsers = Array.from(new Set([...extractedUsers, ...json.users]));
           if (json.cache) auditCache = { ...auditCache, ...json.cache };
+          
+          // Merge skipped users
+          if (json.skipped && Array.isArray(json.skipped)) {
+              json.skipped.forEach(u => skippedUsers.add(u));
+          }
       } else {
+          // --- OVERWRITE LOGIC ---
           extractedUsers = json.users || [];
           auditCache = json.cache || {};
-          // Clear skipped if overwriting
-          skippedUsers.clear();
-          chrome.storage.local.set({ "skipped_users": [] });
+          
+          // Overwrite skipped users
+          if (json.skipped && Array.isArray(json.skipped)) {
+              skippedUsers = new Set(json.skipped);
+          } else {
+              skippedUsers.clear();
+          }
       }
 
-      chrome.storage.local.set({ "saved_users": extractedUsers });
-      chrome.storage.local.set({ "audit_db": auditCache });
+      // Save all states
+      chrome.storage.local.set({ 
+          "saved_users": extractedUsers,
+          "audit_db": auditCache,
+          "skipped_users": Array.from(skippedUsers) 
+      });
+      
       renderList(extractedUsers); 
       updateCount();
       
@@ -427,7 +468,10 @@ document.getElementById("importFileInput").addEventListener("change", (event) =>
       document.getElementById("statsRow").style.display = "flex";
       
       showToast(`${t("imported")}. Users: ${extractedUsers.length}`);
-    } catch (err) { showToast(t("invalidJson")); }
+    } catch (err) { 
+        console.error(err);
+        showToast(t("invalidJson")); 
+    }
     event.target.value = "";
   }; 
   reader.readAsText(file);
@@ -534,44 +578,78 @@ document.getElementById("extractBtn").addEventListener("click", async () => {
   });
 });
 
-// --- MAIN AUDIT LOOP ---
+// --- MAIN AUDIT LOOP & FILTERING ---
 function applyFilters() {
-  const term = document.getElementById("userSearch").value.toLowerCase();
+  const term = document.getElementById("userSearch").value.toLowerCase().trim();
   const container = document.getElementById("listContainer");
   let rows = Array.from(document.querySelectorAll(".row"));
-  
+
+  // 1. Sort by Risk if Filter is Active
   if (isRiskFilter) {
       rows.sort((a, b) => {
-          const scoreA = auditCache[a.getAttribute("data-user")] ? auditCache[a.getAttribute("data-user")].score : 0;
-          const scoreB = auditCache[b.getAttribute("data-user")] ? auditCache[b.getAttribute("data-user")].score : 0;
-          return scoreB - scoreA;
+          const userA = a.getAttribute("data-user");
+          const userB = b.getAttribute("data-user");
+          const scoreA = (auditCache[userA] && typeof auditCache[userA].score === 'number') ? auditCache[userA].score : 0;
+          const scoreB = (auditCache[userB] && typeof auditCache[userB].score === 'number') ? auditCache[userB].score : 0;
+          return scoreB - scoreA; // Descending order (High risk first)
       });
   }
-  
+
+  // 2. Filter and Re-order DOM
   rows.forEach(r => {
-    const data = auditCache[r.getAttribute("data-user")];
-    const matchesSearch = r.getAttribute("data-user").toLowerCase().includes(term);
-    let matchesRisk = true;
-    if (isRiskFilter) { if (!data || data.score < 40) matchesRisk = false; }
+    const username = r.getAttribute("data-user");
+    const data = auditCache[username];
     
-    if (matchesSearch && matchesRisk) { 
-        r.style.display = "flex"; 
-        container.appendChild(r); 
-    } else { 
-        r.style.display = "none"; 
+    // Search Matching
+    const matchesSearch = !term || username.toLowerCase().includes(term);
+    
+    // Risk Matching
+    let matchesRisk = true;
+    if (isRiskFilter) {
+        // Hide if NOT audited yet OR Score is LOW (< 40)
+        if (!data || data.score < 40) {
+            matchesRisk = false;
+        }
+    }
+
+    if (matchesSearch && matchesRisk) {
+        r.style.display = "flex";
+        container.appendChild(r); // Move to end (re-ordering DOM based on sort)
+    } else {
+        r.style.display = "none";
     }
   });
 
-  // --- NEW: Update count immediately after filtering ---
   updateCount();
 }
 
 document.getElementById("userSearch").addEventListener("input", applyFilters);
+
 document.getElementById("filterRiskBtn").addEventListener("click", () => {
+    // UX: Check if we even have audit data to filter
+    const hasAuditData = Object.keys(auditCache).length > 0;
+    if (!hasAuditData && !isRiskFilter) {
+        showToast(t("nothingExport") || "No audit data yet. Please audit users first.");
+        return; 
+    }
+
     isRiskFilter = !isRiskFilter;
     const btn = document.getElementById("filterRiskBtn");
-    if (isRiskFilter) { btn.style.opacity = "1"; btn.style.border = "2px solid #b71c1c"; btn.innerText = t("showAll"); } 
-    else { btn.style.opacity = "1"; btn.style.border = "none"; btn.innerText = t("filterRisk"); }
+    
+    if (isRiskFilter) { 
+        btn.style.opacity = "1"; 
+        btn.style.border = "2px solid #b71c1c"; 
+        btn.style.background = "#ffebee";
+        btn.style.color = "#b71c1c";
+        btn.innerText = t("showAll"); 
+    } else { 
+        btn.style.opacity = "1"; 
+        btn.style.border = "none"; 
+        btn.style.background = "#d32f2f";
+        btn.style.color = "#fff";
+        btn.innerText = t("filterRisk"); 
+    }
+    
     applyFilters();
 });
 
@@ -579,7 +657,7 @@ document.getElementById("auditBtn").addEventListener("click", async () => {
   const btn = document.getElementById("auditBtn");
   if (isAuditing) { stopAuditRequested = true; btn.innerText = t("stopping"); return; }
   
-  // --- UPDATED: Select only VISIBLE, CHECKED, and NOT DISABLED users ---
+  // --- SELECT VISIBLE, CHECKED, ENABLED ---
   const rows = Array.from(document.querySelectorAll(".row"));
   const checkboxes = rows
       .filter(r => r.style.display !== "none") // Only visible rows
@@ -596,43 +674,6 @@ document.getElementById("auditBtn").addEventListener("click", async () => {
     const row = checkboxes[i].closest(".row"); const username = row.getAttribute("data-user");
     row.scrollIntoView({ behavior: "smooth", block: "center" });
     
-    let delay = 0;
-    if (aiProvider === 'disabled' && !auditCache[username]) { delay = 50; }
-    
-    await performAudit(username, row);
-    if(delay > 0) await new Promise(r => setTimeout(r, delay));
-  }
-  isAuditing = false; btn.innerText = t("audit"); btn.classList.remove("btn-stop");
-  if (stopAuditRequested) showToast(t("auditStopped")); else showToast(t("auditComplete"));
-  if (isRiskFilter) applyFilters();
-});
-
-document.getElementById("userSearch").addEventListener("input", applyFilters);
-document.getElementById("filterRiskBtn").addEventListener("click", () => {
-    isRiskFilter = !isRiskFilter;
-    const btn = document.getElementById("filterRiskBtn");
-    if (isRiskFilter) { btn.style.opacity = "1"; btn.style.border = "2px solid #b71c1c"; btn.innerText = t("showAll"); } 
-    else { btn.style.opacity = "1"; btn.style.border = "none"; btn.innerText = t("filterRisk"); }
-    applyFilters();
-});
-
-document.getElementById("auditBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("auditBtn");
-  if (isAuditing) { stopAuditRequested = true; btn.innerText = t("stopping"); return; }
-  
-  // Only select checkboxes that are checked AND not disabled (i.e. not skipped)
-  const checkboxes = document.querySelectorAll(".user-check:checked:not(:disabled)");
-  
-  if (!checkboxes.length) return showToast(t("selectUser"));
-  isAuditing = true; stopAuditRequested = false; btn.innerText = t("stopAudit"); btn.classList.add("btn-stop");
-  document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("batchStart")}</div>`;
-  
-  for (let i = 0; i < checkboxes.length; i++) {
-    if (stopAuditRequested) break;
-    const row = checkboxes[i].closest(".row"); const username = row.getAttribute("data-user");
-    row.scrollIntoView({ behavior: "smooth", block: "center" });
-    
-    // --- NO SLEEP IF AI ACTIVE ---
     let delay = 0;
     if (aiProvider === 'disabled' && !auditCache[username]) { delay = 50; }
     
@@ -821,12 +862,13 @@ function toggleSkipUser(username, row) {
 }
 
 function updateTag(tag, data) { tag.className = data.score >= 40 ? "tag red" : "tag green"; tag.innerText = data.score >= 40 ? `RISK ${data.score}` : "SAFE"; }
+
+// --- UPDATE COUNT (Visible Only) ---
 function updateCount() { 
     const rows = Array.from(document.querySelectorAll(".row"));
     const visibleChecked = rows.filter(r => {
         // Must be visible
         if (r.style.display === "none") return false;
-        
         // Must be checked and enabled
         const cb = r.querySelector(".user-check");
         return cb && cb.checked && !cb.disabled;
