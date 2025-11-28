@@ -118,5 +118,8 @@
   "errRateLimit": "🛑 レート制限 (429)。停止します。",
   "errProxyFail": "🛑 プロキシエラー。停止します。",
   "msgRetrying": "⚠️ AI エラー。60秒後に再試行します...",
-  "errRetryFail": "🛑 再試行に失敗しました。監査を停止します。"
+  "errRetryFail": "🛑 再試行に失敗しました。監査を停止します。",
+  "markChecked": "確認済み / 安全としてマーク",
+  "statusChecked": "確認済",
+  "userMarked": "ユーザーを確認済みとしてマークしました。"
 }

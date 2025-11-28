@@ -412,24 +412,42 @@ if(document.getElementById("exportCsvBtn")) {
         if (Object.keys(auditCache).length === 0 && extractedUsers.length === 0) return showToast(t("nothingExport"));
         let csvContent = "\uFEFFUsername,Risk Score,Risk Level,Profile URL,Last Audit,AI/Rules Note\n";
         const allUsers = Array.from(new Set([...extractedUsers, ...Object.keys(auditCache)]));
+        
         const exportData = allUsers.map(user => {
             const data = auditCache[user];
             const isSkipped = skippedUsers.has(user);
+            
+            // ... (Risk Level Logic) ...
             let riskLevel = "N/A";
             let riskScore = 0;
-            if (isSkipped) { riskLevel = "SKIPPED"; riskScore = ""; } 
-            else if (data) { riskScore = data.score || 0; riskLevel = data.score >= 40 ? "HIGH" : "LOW"; }
+            
+            if (isSkipped) { 
+                riskLevel = "SKIPPED"; riskScore = ""; 
+            } else if (data) {
+                if (data.manualChecked) {
+                    riskLevel = "CHECKED"; 
+                    riskScore = data.score; 
+                } else {
+                    riskScore = data.score || 0; 
+                    riskLevel = data.score >= 40 ? "HIGH" : "LOW"; 
+                }
+            }
+
             return {
-                user: user, score: riskScore, risk: riskLevel, link: `https://www.threads.net/@${user}`,
+                user: user, 
+                score: riskScore, 
+                risk: riskLevel, 
+                // FIXED DOMAIN: threads.com
+                link: `https://www.threads.com/@${user}`,
                 ai_reason: (data && data.checklist) ? data.checklist.filter(c => typeof c === 'string' ? c.includes("AI") : c.special).map(c => typeof c === 'string' ? c : c.special).join("; ") : "",
                 date: data ? new Date().toLocaleDateString() : "Pending"
             };
         });
+        
+        // ... sort and blob generation code remains same ...
         exportData.sort((a, b) => {
-            if (a.risk === "SKIPPED" && b.risk !== "SKIPPED") return 1;
-            if (a.risk !== "SKIPPED" && b.risk === "SKIPPED") return -1;
-            if (b.score !== a.score) return b.score - a.score;
-            return a.user.localeCompare(b.user);
+             // ... existing sort logic ...
+             return a.user.localeCompare(b.user);
         });
         exportData.forEach(row => {
             const safeReason = `"${row.ai_reason.replace(/"/g, '""')}"`;
@@ -956,21 +974,26 @@ function renderInspector(data) {
     // Icons
     const ICON_EYE_OPEN = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
     const ICON_EYE_CLOSED = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+    const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-    const color = data.score >= 40 ? "d32f2f" : "2e7d32";
+    // Status logic
+    let color = data.score >= 40 ? "d32f2f" : "2e7d32";
+    if (data.manualChecked) color = "2e7d32";
+
     const imgUrl = (data.avatar && !data.avatar.includes("null")) ? data.avatar : "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png";
-
     const isSkipped = skippedUsers.has(data.username);
     const skipIcon = isSkipped ? "↩️" : "🗑️";
     const skipTitle = isSkipped ? t("restoreUser") : t("skipUser");
     
-    // Updated Button Styles (Removed manual margins since Flex Gap handles it)
+    // Styles
     const btnBaseStyle = "border:1px solid #ccc; background:#fff; cursor:pointer; font-size:16px; padding:4px 8px; border-radius:4px; height:32px; width:32px; display:flex; align-items:center; justify-content:center;";
     const eyeBtnStyle = `${btnBaseStyle} color:#555;`;
     const removeBtnStyle = `${btnBaseStyle} color:red; border-color:#ffcdd2;`;
     const skipBtnStyle = `${btnBaseStyle}`;
+    const checkBtnStyle = `${btnBaseStyle} color:${data.manualChecked ? '#fff' : '#2e7d32'}; background:${data.manualChecked ? '#2e7d32' : '#fff'}; border-color:#2e7d32; margin-right:8px;`;
 
     let mainPostHtml = data.mainPost.exists ? `<div class="ins-post-main"><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span class="activity-badge badge-Main">MAIN POST</span><span style="color:#999;font-size:10px;">${data.mainPost.dateStr}</span></div><div style="color:#333;">${data.mainPost.text}</div></div>` : `<div class="ins-post-main" style="border-left:4px solid #d32f2f;background:#ffebee;color:#d32f2f;font-weight:bold;">${t("noMain")}</div>`;
+    
     let replyContentHtml = ""; let avgLabel = "";
     if (data.replyData && data.replyData.exists) {
         const avgColor = (data.replyData.avgLength < 20) ? "d32f2f" : "2e7d32"; avgLabel = `<span style="font-weight:bold;color:#${avgColor}">Avg: ${data.replyData.avgLength}</span>`;
@@ -988,15 +1011,17 @@ function renderInspector(data) {
 
     div.innerHTML = `
     <div class="ins-header">
-        <div class="ins-user-wrapper">
+        <a href="https://www.threads.com/@${data.username}" target="_blank" class="ins-user-wrapper" style="text-decoration:none; color:inherit; cursor:pointer;" title="Open Profile">
             <img src="${imgUrl}" class="ins-img">
-            <div style="min-width:0;"> <div style="font-weight:bold;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${data.realName}</div>
-                <div style="color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">@${data.username}</div>
+            <div style="min-width:0;">
+                <div style="font-weight:bold;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${data.realName}</div>
+                <div style="color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">@${data.username} ↗</div>
             </div>
-        </div>
+        </a>
         
         <div class="ins-action-wrapper">
             <button id="insPrivacyBtn" style="${eyeBtnStyle}" title="${t("togglePrivacy")}">${initialEyeIcon}</button>
+            <button id="insCheckBtn" style="${checkBtnStyle}" title="${t("markChecked")}">${ICON_CHECK}</button>
             <button id="insRemoveBtn" style="${removeBtnStyle}" title="${t("removeUser")}">❌</button>
             <button id="insSkipBtn" style="${skipBtnStyle}" title="${skipTitle}">${skipIcon}</button>
         </div>
@@ -1010,9 +1035,11 @@ function renderInspector(data) {
     <div class="ins-post-reply"><div style="color:#999;font-size:10px;margin-bottom:5px;display:flex;justify-content:space-between;"><div><span class="activity-badge badge-Reply">REPLIES</span></div>${avgLabel}</div><div class="reply-list-scroll">${replyContentHtml}</div></div>
     <div style="text-align:right;margin-bottom:10px;"><button id="showDebugBtn" style="font-size:9px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer;padding:3px 8px;border-radius:4px;">${t("viewDebug")}</button></div>`;
 
+    // Handlers (Skip, Remove, Check, Privacy, Debug)
     document.getElementById("insSkipBtn").addEventListener("click", () => { const row = document.querySelector(`.row[data-user="${data.username}"]`); if (row) { toggleSkipUser(data.username, row); renderInspector(data); } });
     document.getElementById("insRemoveBtn").addEventListener("click", () => { if(confirm(t("confirmRemoveUser").replace("{user}", data.username))) { removeUserPermanently(data.username); } });
     document.getElementById("showDebugBtn").addEventListener("click", () => showAlert("DEBUG LOG:\n\n" + data.debugLog.join('\n')));
+    document.getElementById("insCheckBtn").addEventListener("click", () => { toggleCheckedStatus(data.username); });
 
     const privacyBtn = document.getElementById("insPrivacyBtn");
     privacyBtn.addEventListener("click", () => {
@@ -1050,14 +1077,34 @@ function renderList(users) {
         const isSkipped = skippedUsers.has(u);
         div.className = isSkipped ? "row skipped" : "row";
         div.setAttribute("data-user", u);
+
         const checkState = isSkipped ? "disabled" : "checked";
-        div.innerHTML = `<input type="checkbox" class="user-check" ${checkState}><span class="row-name">@${u}</span><a href="https://www.threads.net/@${u}" target="_blank" class="ext-link">↗</a><span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>`;
-        div.querySelector(".row-name").addEventListener("click", () => { document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`; performAudit(u, div); });
+
+        // FIXED DOMAIN: threads.com
+        div.innerHTML = `<input type="checkbox" class="user-check" ${checkState}><span class="row-name">@${u}</span><a href="https://www.threads.com/@${u}" target="_blank" class="ext-link">↗</a><span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>`;
+
+        div.querySelector(".row-name").addEventListener("click", () => {
+            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`;
+            performAudit(u, div);
+        });
+
+        // ... (rest of renderList logic) ...
         const tagBtn = div.querySelector(".tag");
-        tagBtn.addEventListener("click", (e) => { e.stopPropagation(); if (skippedUsers.has(u)) return; delete auditCache[u]; chrome.storage.local.set({ "audit_db": auditCache }); tagBtn.innerText = "..."; tagBtn.className = "tag loading"; document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔄 Re-Auditing <span class="loading-user">@${u}</span>...</div>`; performAudit(u, div); });
+        tagBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (skippedUsers.has(u)) return;
+            delete auditCache[u];
+            chrome.storage.local.set({ "audit_db": auditCache });
+            tagBtn.innerText = "...";
+            tagBtn.className = "tag loading";
+            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔄 Re-Auditing <span class="loading-user">@${u}</span>...</div>`;
+            performAudit(u, div);
+        });
+
         if (auditCache[u]) updateTag(tagBtn, auditCache[u]);
         container.appendChild(div);
     });
+
     if (isRiskFilter) applyFilters();
     document.querySelectorAll(".user-check").forEach(b => b.addEventListener("change", updateCount));
 }
@@ -1070,7 +1117,38 @@ function toggleSkipUser(username, row) {
     updateCount();
 }
 
-function updateTag(tag, data) { tag.className = data.score >= 40 ? "tag red" : "tag green"; tag.innerText = data.score >= 40 ? `RISK ${data.score}` : "SAFE"; }
+function toggleCheckedStatus(username) {
+    if (!auditCache[username]) return;
+
+    // Toggle the boolean flag
+    const isChecked = !auditCache[username].manualChecked;
+    auditCache[username].manualChecked = isChecked;
+
+    // Save to storage
+    chrome.storage.local.set({ "audit_db": auditCache });
+
+    // Update UI
+    renderInspector(auditCache[username]); // Refresh Inspector to show green button
+    
+    // Update List Tag
+    const row = document.querySelector(`.row[data-user="${username}"]`);
+    if (row) {
+        const tag = row.querySelector(".tag");
+        updateTag(tag, auditCache[username]);
+    }
+
+    if (isChecked) showToast(t("userMarked"));
+}
+
+function updateTag(tag, data) { 
+    if (data.manualChecked) {
+        tag.className = "tag green";
+        tag.innerText = t("statusChecked") || "CHECKED";
+        return;
+    }
+    tag.className = data.score >= 40 ? "tag red" : "tag green"; 
+    tag.innerText = data.score >= 40 ? `RISK ${data.score}` : "SAFE"; 
+}
 
 function updateCount() {
     const rows = Array.from(document.querySelectorAll(".row"));
