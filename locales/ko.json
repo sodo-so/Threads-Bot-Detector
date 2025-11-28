@@ -86,5 +86,13 @@
   "importPrompt": "이 파일을 현재 목록과 병합하시겠습니까?",
   "btnOk": "확인",
   "skipUser": "삭제된 것으로 표시 (건너뛰기)",
-  "restoreUser": "사용자 복원"
+  "restoreUser": "사용자 복원",
+  "btnStopExtract": "추출 중지",
+  "btnStopFound": "중지 ({count}명 발견)",
+  "btnInit": "초기화 중...",
+  "btnOpenModal": "⚠️ 팔로워 목록 열기...",
+  "msgOpenModal": "페이지에서 팔로워 목록을 열어주세요.",
+  "msgRefresh": "Threads 페이지를 새로고침하세요.",
+  "msgDone": "완료! +{count}명이 추가되었습니다.",
+  "errWrongDomain": "먼저 Threads (threads.com) 를 열어주세요."
 }

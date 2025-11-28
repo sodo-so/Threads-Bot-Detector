@@ -86,5 +86,13 @@
   "importPrompt": "このファイルを現在のリストとマージしますか？",
   "btnOk": "OK",
   "skipUser": "削除済みとしてマーク（スキップ）",
-  "restoreUser": "ユーザーを復元"
+  "restoreUser": "ユーザーを復元",
+  "btnStopExtract": "抽出を停止",
+  "btnStopFound": "停止 ({count} 件検出)",
+  "btnInit": "初期化中...",
+  "btnOpenModal": "⚠️ リストを開いて...",
+  "msgOpenModal": "ページ上でフォロワーリストを開いてください。",
+  "msgRefresh": "Threadsのページを更新してください。",
+  "msgDone": "完了！ +{count} 人追加されました。",
+  "errWrongDomain": "先に Threads (threads.com) を開いてください。"
 }

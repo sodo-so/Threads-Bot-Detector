@@ -86,5 +86,13 @@
   "importPrompt": "Do you want to MERGE this file with your current list?",
   "btnOk": "OK",
   "skipUser": "Mark as Deleted (Skip)",
-  "restoreUser": "Restore User"
+  "restoreUser": "Restore User",
+  "btnStopExtract": "Stop Extraction",
+  "btnStopFound": "Stop ({count} found)",
+  "btnInit": "Initializing...",
+  "btnOpenModal": "⚠️ Open Followers List...",
+  "msgOpenModal": "Please open the Followers list on the page.",
+  "msgRefresh": "Please refresh the Threads page.",
+  "msgDone": "Done! +{count} new users.",
+  "errWrongDomain": "Please open Threads (threads.com) first."
 }

@@ -541,41 +541,92 @@ document.getElementById("saveKeyBtn").addEventListener("click", () => {
 });
 document.getElementById("removeKeyBtn").addEventListener("click", () => { chrome.storage.local.remove("enc_api_key", () => { geminiKey = null; updateAIUI(); showToast(t("keyRemoved")); }); });
 
-// --- EXTRACT FOLLOWERS (WITH MERGE) ---
-document.getElementById("extractBtn").addEventListener("click", async () => {
+// ... existing variables ...
+let isExtracting = false;
+const extractBtn = document.getElementById("extractBtn");
+
+// --- CLICK HANDLER ---
+extractBtn.addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  
-  if (!tab.url.includes("threads")) return showToast(t("errOpenProfile")); 
+
+  // 1. URL CHECK
+  if (!tab.url.match(/threads\.(net|com)/)) {
+    return showToast(t("errWrongDomain") || "Please open Threads first");
+  }
+
+  // STOP Logic
+  if (isExtracting) {
+    chrome.tabs.sendMessage(tab.id, { action: "stop_extraction" });
+    extractBtn.innerText = t("stopping"); // Existing key
+    return;
+  }
+
+  // START Logic
+  isExtracting = true;
+  extractBtn.innerText = t("btnInit"); // "Initializing..."
+  extractBtn.disabled = true;
   
   chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }, () => {
-    chrome.tabs.sendMessage(tab.id, { action: "extract_followers" }, (res) => {
-      
-      if (chrome.runtime.lastError) return showToast(t("errConnect")); 
-      
-      if (!res || !res.success) {
-          const errorMsg = t(res?.error) || res?.error || "Unknown Error";
-          return showToast(errorMsg);
-      }
-
-      const incomingUsers = res.data || [];
-      const previousCount = extractedUsers.length;
-
-      // Merge and deduplicate
-      extractedUsers = Array.from(new Set([...extractedUsers, ...incomingUsers]));
-      const addedCount = extractedUsers.length - previousCount;
-
-      chrome.storage.local.set({ "saved_users": extractedUsers }); 
-      renderList(extractedUsers);
-      
-      document.getElementById("userSearch").style.display = "block"; 
-      document.getElementById("filterRiskBtn").style.display = "block"; 
-      document.getElementById("auditBtn").style.display = "block"; 
-      document.getElementById("statsRow").style.display = "flex"; 
-      updateCount();
-
-      showToast(`+${addedCount} new (Total: ${extractedUsers.length})`);
-    });
+    if (chrome.runtime.lastError) {
+      isExtracting = false;
+      extractBtn.disabled = false;
+      extractBtn.innerText = t("extract");
+      return showToast(t("msgRefresh")); // "Please refresh..."
+    }
+    
+    extractBtn.disabled = false;
+    chrome.tabs.sendMessage(tab.id, { action: "extract_followers" });
   });
+});
+
+// --- MESSAGE LISTENER ---
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+
+  // A. WAITING MODE
+  if (msg.action === "waiting_for_modal") {
+    extractBtn.innerText = t("btnOpenModal"); // "⚠️ Open Followers List..."
+    extractBtn.style.background = "#f57c00"; 
+    extractBtn.style.color = "#fff";
+    showToast(t("msgOpenModal")); // "Please open the Followers list..."
+  }
+
+  // B. STARTED
+  if (msg.action === "extraction_started") {
+    const stopText = t("btnStopFound").replace("{count}", "0");
+    extractBtn.innerText = stopText; 
+    extractBtn.style.background = "#b71c1c"; 
+  }
+
+  // C. PROGRESS
+  if (msg.action === "extraction_progress") {
+    const stopText = t("btnStopFound").replace("{count}", msg.count);
+    extractBtn.innerText = stopText;
+  }
+
+  // D. COMPLETED
+  if (msg.action === "extraction_complete") {
+    isExtracting = false;
+    extractBtn.innerText = t("extract");
+    extractBtn.style.background = "#000"; 
+
+    const incomingUsers = msg.data || [];
+    const prevLen = extractedUsers.length;
+    
+    extractedUsers = Array.from(new Set([...extractedUsers, ...incomingUsers]));
+    const newCount = extractedUsers.length - prevLen;
+
+    chrome.storage.local.set({ "saved_users": extractedUsers });
+    renderList(extractedUsers);
+    
+    document.getElementById("userSearch").style.display = "block";
+    document.getElementById("filterRiskBtn").style.display = "block";
+    document.getElementById("auditBtn").style.display = "block";
+    document.getElementById("statsRow").style.display = "flex";
+    updateCount();
+
+    const doneText = t("msgDone").replace("{count}", newCount);
+    showToast(doneText);
+  }
 });
 
 // --- MAIN AUDIT LOOP & FILTERING ---

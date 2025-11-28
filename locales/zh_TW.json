@@ -86,5 +86,13 @@
   "importPrompt": "您希望將此檔案與目前的列表合併嗎？",
   "btnOk": "確定",
   "skipUser": "標記為已刪除 (跳過)",
-  "restoreUser": "恢復用戶"
+  "restoreUser": "恢復用戶",
+  "btnStopExtract": "停止提取",
+  "btnStopFound": "停止 (已發現 {count})",
+  "btnInit": "初始化中...",
+  "btnOpenModal": "⚠️ 請開啟粉絲列表...",
+  "msgOpenModal": "請在頁面上開啟粉絲列表。",
+  "msgRefresh": "請重新整理 Threads 頁面。",
+  "msgDone": "完成！新增了 +{count} 位用戶。",
+  "errWrongDomain": "請先開啟 Threads (threads.com) 網站。"
 }
