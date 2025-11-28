@@ -84,5 +84,7 @@
   "btnMerge": "合并",
   "btnOverwrite": "覆盖",
   "importPrompt": "您希望将此文件与当前列表合并吗？",
-  "btnOk": "确定"
+  "btnOk": "确定",
+  "skipUser": "标记为已删除 (跳过)",
+  "restoreUser": "恢复用户"
 }

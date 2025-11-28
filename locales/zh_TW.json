@@ -84,5 +84,7 @@
   "btnMerge": "合併",
   "btnOverwrite": "覆寫",
   "importPrompt": "您希望將此檔案與目前的列表合併嗎？",
-  "btnOk": "確定"
+  "btnOk": "確定",
+  "skipUser": "標記為已刪除 (跳過)",
+  "restoreUser": "恢復用戶"
 }

@@ -84,5 +84,7 @@
   "btnMerge": "マージ (統合)",
   "btnOverwrite": "上書き",
   "importPrompt": "このファイルを現在のリストとマージしますか？",
-  "btnOk": "OK"
+  "btnOk": "OK",
+  "skipUser": "削除済みとしてマーク（スキップ）",
+  "restoreUser": "ユーザーを復元"
 }

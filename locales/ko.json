@@ -84,5 +84,7 @@
   "btnMerge": "병합",
   "btnOverwrite": "덮어쓰기",
   "importPrompt": "이 파일을 현재 목록과 병합하시겠습니까?",
-  "btnOk": "확인"
+  "btnOk": "확인",
+  "skipUser": "삭제된 것으로 표시 (건너뛰기)",
+  "restoreUser": "사용자 복원"
 }

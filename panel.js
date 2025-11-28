@@ -9,6 +9,7 @@ let isAuditing = false;
 let stopAuditRequested = false;
 let puterSignedIn = false;
 let puterLibraryLoaded = false; 
+let skippedUsers = new Set();
 
 // PROXY SOURCES
 const PROXY_SOURCES = [
@@ -17,6 +18,15 @@ const PROXY_SOURCES = [
     "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt",
     "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
 ];
+
+// Inject CSS for the deleted/skipped state
+const styleSheet = document.createElement("style");
+styleSheet.innerText = `
+  .row.skipped { background: #f5f5f5 !important; opacity: 0.6; }
+  .row.skipped .row-name { text-decoration: line-through; color: #aaa; font-style: italic; }
+  /* Dialog Styles override/additions if needed */
+`;
+document.head.appendChild(styleSheet);
 
 async function loadLanguage(lang) {
   try {
@@ -53,11 +63,78 @@ document.getElementById("langSelector").addEventListener("change", (e) => {
   currentLang = e.target.value; chrome.storage.local.set({ "ui_lang": currentLang }); loadLanguage(currentLang);
 });
 
+// --- DIALOG HELPERS ---
+/**
+ * Shows a custom confirmation dialog with custom button text.
+ * @param {string} message 
+ * @param {string} [yesText] - Text for the primary button (default: OK)
+ * @param {string} [noText] - Text for the secondary button (default: Cancel)
+ */
+function showConfirm(message, yesText = "OK", noText = "Cancel") {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById("appDialog");
+    const textEl = document.getElementById("dialogText");
+    const okBtn = document.getElementById("dialogOkBtn");
+    const cancelBtn = document.getElementById("dialogCancelBtn");
+
+    textEl.innerText = message;
+    
+    // Apply custom button text
+    okBtn.innerText = yesText;
+    cancelBtn.innerText = noText;
+    cancelBtn.style.display = "block";
+
+    const cleanup = () => {
+      okBtn.removeEventListener("click", handleOk);
+      cancelBtn.removeEventListener("click", handleCancel);
+      dialog.close();
+    };
+
+    const handleOk = () => { cleanup(); resolve(true); };
+    const handleCancel = () => { cleanup(); resolve(false); };
+
+    okBtn.addEventListener("click", handleOk);
+    cancelBtn.addEventListener("click", handleCancel);
+    
+    dialog.showModal();
+  });
+}
+
+/**
+ * Shows a custom alert dialog (OK button only).
+ * @param {string} message 
+ */
+function showAlert(message) {
+  const dialog = document.getElementById("appDialog");
+  const textEl = document.getElementById("dialogText");
+  const okBtn = document.getElementById("dialogOkBtn");
+  const cancelBtn = document.getElementById("dialogCancelBtn");
+
+  textEl.innerText = message;
+  
+  // Explicitly reset button text to standard OK (or translated)
+  okBtn.innerText = t("btnOk") !== "btnOk" ? t("btnOk") : "OK";
+  
+  cancelBtn.style.display = "none"; // Hide cancel for alerts
+
+  const handleOk = () => { 
+    okBtn.removeEventListener("click", handleOk);
+    dialog.close(); 
+  };
+
+  okBtn.addEventListener("click", handleOk);
+  dialog.showModal();
+}
+
 // --- INIT ---
-chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "ui_lang", "proxy_config", "privacy_mode"], (data) => {
+chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode"], (data) => {
   auditCache = data.audit_db || {};
   if (data.ui_lang) { currentLang = data.ui_lang; document.getElementById("langSelector").value = currentLang; }
   loadLanguage(currentLang);
+
+  if (data.skipped_users) {
+      skippedUsers = new Set(data.skipped_users);
+  }
 
   if (data.saved_users && Array.isArray(data.saved_users)) {
     extractedUsers = data.saved_users; renderList(extractedUsers);
@@ -265,7 +342,6 @@ document.getElementById("exportBtn").addEventListener("click", () => {
   showToast(t("exported"));
 });
 
-// --- CSV EXPORT LOGIC ---
 document.getElementById("exportCsvBtn").addEventListener("click", () => {
   if (Object.keys(auditCache).length === 0 && extractedUsers.length === 0) {
       return showToast(t("nothingExport"));
@@ -307,7 +383,8 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
 });
 
 document.getElementById("importBtn").addEventListener("click", () => { document.getElementById("importFileInput").click(); });
-// --- 2. MODIFIED IMPORT LOGIC ---
+
+// --- IMPORT LOGIC (MERGE/OVERWRITE) ---
 document.getElementById("importFileInput").addEventListener("change", (event) => {
   const file = event.target.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -334,6 +411,9 @@ document.getElementById("importFileInput").addEventListener("change", (event) =>
       } else {
           extractedUsers = json.users || [];
           auditCache = json.cache || {};
+          // Clear skipped if overwriting
+          skippedUsers.clear();
+          chrome.storage.local.set({ "skipped_users": [] });
       }
 
       chrome.storage.local.set({ "saved_users": extractedUsers });
@@ -352,6 +432,7 @@ document.getElementById("importFileInput").addEventListener("change", (event) =>
   }; 
   reader.readAsText(file);
 });
+
 // --- AI UI LOGIC ---
 const providerSelector = document.getElementById("aiProviderSelector");
 const cloudModelSelector = document.getElementById("cloudModelSelector");
@@ -416,6 +497,7 @@ document.getElementById("saveKeyBtn").addEventListener("click", () => {
 });
 document.getElementById("removeKeyBtn").addEventListener("click", () => { chrome.storage.local.remove("enc_api_key", () => { geminiKey = null; updateAIUI(); showToast(t("keyRemoved")); }); });
 
+// --- EXTRACT FOLLOWERS (WITH MERGE) ---
 document.getElementById("extractBtn").addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   
@@ -431,15 +513,12 @@ document.getElementById("extractBtn").addEventListener("click", async () => {
           return showToast(errorMsg);
       }
 
-      // --- NEW MERGE LOGIC ---
       const incomingUsers = res.data || [];
       const previousCount = extractedUsers.length;
 
-      // Combine existing users with new ones and remove duplicates using Set
+      // Merge and deduplicate
       extractedUsers = Array.from(new Set([...extractedUsers, ...incomingUsers]));
-      
       const addedCount = extractedUsers.length - previousCount;
-      // -----------------------
 
       chrome.storage.local.set({ "saved_users": extractedUsers }); 
       renderList(extractedUsers);
@@ -450,7 +529,6 @@ document.getElementById("extractBtn").addEventListener("click", async () => {
       document.getElementById("statsRow").style.display = "flex"; 
       updateCount();
 
-      // Show toast: "Added X new users (Total: Y)"
       showToast(`+${addedCount} new (Total: ${extractedUsers.length})`);
     });
   });
@@ -461,6 +539,7 @@ function applyFilters() {
   const term = document.getElementById("userSearch").value.toLowerCase();
   const container = document.getElementById("listContainer");
   let rows = Array.from(document.querySelectorAll(".row"));
+  
   if (isRiskFilter) {
       rows.sort((a, b) => {
           const scoreA = auditCache[a.getAttribute("data-user")] ? auditCache[a.getAttribute("data-user")].score : 0;
@@ -468,13 +547,23 @@ function applyFilters() {
           return scoreB - scoreA;
       });
   }
+  
   rows.forEach(r => {
     const data = auditCache[r.getAttribute("data-user")];
     const matchesSearch = r.getAttribute("data-user").toLowerCase().includes(term);
     let matchesRisk = true;
     if (isRiskFilter) { if (!data || data.score < 40) matchesRisk = false; }
-    if (matchesSearch && matchesRisk) { r.style.display = "flex"; container.appendChild(r); } else { r.style.display = "none"; }
+    
+    if (matchesSearch && matchesRisk) { 
+        r.style.display = "flex"; 
+        container.appendChild(r); 
+    } else { 
+        r.style.display = "none"; 
+    }
   });
+
+  // --- NEW: Update count immediately after filtering ---
+  updateCount();
 }
 
 document.getElementById("userSearch").addEventListener("input", applyFilters);
@@ -489,7 +578,51 @@ document.getElementById("filterRiskBtn").addEventListener("click", () => {
 document.getElementById("auditBtn").addEventListener("click", async () => {
   const btn = document.getElementById("auditBtn");
   if (isAuditing) { stopAuditRequested = true; btn.innerText = t("stopping"); return; }
-  const checkboxes = document.querySelectorAll(".user-check:checked");
+  
+  // --- UPDATED: Select only VISIBLE, CHECKED, and NOT DISABLED users ---
+  const rows = Array.from(document.querySelectorAll(".row"));
+  const checkboxes = rows
+      .filter(r => r.style.display !== "none") // Only visible rows
+      .map(r => r.querySelector(".user-check:checked:not(:disabled)")) // Only checked & active
+      .filter(Boolean); // Remove nulls
+  
+  if (!checkboxes.length) return showToast(t("selectUser"));
+  
+  isAuditing = true; stopAuditRequested = false; btn.innerText = t("stopAudit"); btn.classList.add("btn-stop");
+  document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("batchStart")}</div>`;
+  
+  for (let i = 0; i < checkboxes.length; i++) {
+    if (stopAuditRequested) break;
+    const row = checkboxes[i].closest(".row"); const username = row.getAttribute("data-user");
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    
+    let delay = 0;
+    if (aiProvider === 'disabled' && !auditCache[username]) { delay = 50; }
+    
+    await performAudit(username, row);
+    if(delay > 0) await new Promise(r => setTimeout(r, delay));
+  }
+  isAuditing = false; btn.innerText = t("audit"); btn.classList.remove("btn-stop");
+  if (stopAuditRequested) showToast(t("auditStopped")); else showToast(t("auditComplete"));
+  if (isRiskFilter) applyFilters();
+});
+
+document.getElementById("userSearch").addEventListener("input", applyFilters);
+document.getElementById("filterRiskBtn").addEventListener("click", () => {
+    isRiskFilter = !isRiskFilter;
+    const btn = document.getElementById("filterRiskBtn");
+    if (isRiskFilter) { btn.style.opacity = "1"; btn.style.border = "2px solid #b71c1c"; btn.innerText = t("showAll"); } 
+    else { btn.style.opacity = "1"; btn.style.border = "none"; btn.innerText = t("filterRisk"); }
+    applyFilters();
+});
+
+document.getElementById("auditBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("auditBtn");
+  if (isAuditing) { stopAuditRequested = true; btn.innerText = t("stopping"); return; }
+  
+  // Only select checkboxes that are checked AND not disabled (i.e. not skipped)
+  const checkboxes = document.querySelectorAll(".user-check:checked:not(:disabled)");
+  
   if (!checkboxes.length) return showToast(t("selectUser"));
   isAuditing = true; stopAuditRequested = false; btn.innerText = t("stopAudit"); btn.classList.add("btn-stop");
   document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("batchStart")}</div>`;
@@ -558,75 +691,17 @@ async function performAudit(username, rowElement) {
   } catch (e) { tag.innerText = t("statusFail"); tag.className = "tag"; }
 }
 
-// --- 1. MODIFIED HELPER: Custom Buttons ---
-/**
- * Shows a custom confirmation dialog with custom button text.
- * @param {string} message 
- * @param {string} [yesText] - Text for the primary button (default: OK)
- * @param {string} [noText] - Text for the secondary button (default: Cancel)
- */
-function showConfirm(message, yesText = "OK", noText = "Cancel") {
-  return new Promise((resolve) => {
-    const dialog = document.getElementById("appDialog");
-    const textEl = document.getElementById("dialogText");
-    const okBtn = document.getElementById("dialogOkBtn");
-    const cancelBtn = document.getElementById("dialogCancelBtn");
-
-    textEl.innerText = message;
-    
-    // Apply custom button text
-    okBtn.innerText = yesText;
-    cancelBtn.innerText = noText;
-    
-    cancelBtn.style.display = "block";
-
-    const cleanup = () => {
-      okBtn.removeEventListener("click", handleOk);
-      cancelBtn.removeEventListener("click", handleCancel);
-      dialog.close();
-    };
-
-    const handleOk = () => { cleanup(); resolve(true); };
-    const handleCancel = () => { cleanup(); resolve(false); };
-
-    okBtn.addEventListener("click", handleOk);
-    cancelBtn.addEventListener("click", handleCancel);
-    
-    dialog.showModal();
-  });
-}
-
-/**
- * Shows a custom alert dialog (OK button only).
- * @param {string} message 
- */
-function showAlert(message) {
-  const dialog = document.getElementById("appDialog");
-  const textEl = document.getElementById("dialogText");
-  const okBtn = document.getElementById("dialogOkBtn");
-  const cancelBtn = document.getElementById("dialogCancelBtn");
-
-  textEl.innerText = message;
-  
-  // --- FIX: Explicitly reset button text to "OK" ---
-  // This prevents it from showing "Merge" or "Overwrite" from previous dialogs
-  okBtn.innerText = t("btnOk") !== "btnOk" ? t("btnOk") : "OK";
-  
-  cancelBtn.style.display = "none"; // Hide cancel for alerts
-
-  const handleOk = () => { 
-    okBtn.removeEventListener("click", handleOk);
-    dialog.close(); 
-  };
-
-  okBtn.addEventListener("click", handleOk);
-  dialog.showModal();
-}
-
 function renderInspector(data) {
   const div = document.getElementById("inspector");
   const color = data.score >= 40 ? "d32f2f" : "2e7d32";
   const imgUrl = (data.avatar && !data.avatar.includes("null")) ? data.avatar : "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png";
+  
+  // Skip Button Config
+  const isSkipped = skippedUsers.has(data.username);
+  const skipIcon = isSkipped ? "↩️" : "🗑️";
+  const skipTitle = isSkipped ? t("restoreUser") : t("skipUser");
+  const skipBtnStyle = "margin-left:auto; border:1px solid #ccc; background:#fff; cursor:pointer; font-size:16px; padding:4px 8px; border-radius:4px; height:32px; width:32px; display:flex; align-items:center; justify-content:center;";
+
   let mainPostHtml = data.mainPost.exists ? `<div class="ins-post-main"><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span class="activity-badge badge-Main">MAIN POST</span><span style="color:#999;font-size:10px;">${data.mainPost.dateStr}</span></div><div style="color:#333;">${data.mainPost.text}</div></div>` : `<div class="ins-post-main" style="border-left:4px solid #d32f2f;background:#ffebee;color:#d32f2f;font-weight:bold;">${t("noMain")}</div>`;
   let replyContentHtml = ""; let avgLabel = "";
   if (data.replyData && data.replyData.exists) {
@@ -651,7 +726,11 @@ function renderInspector(data) {
   const ruleHtml = ruleItems.map(item => { if (item.key) return `<li>${t(item.key)}${item.val ? ` (${item.val})` : ""}${item.score ? ` (+${item.score})` : ""}</li>`; return `<li>${item}</li>`; }).join('');
 
   div.innerHTML = `
-    <div class="ins-header"><img src="${imgUrl}" class="ins-img"><div><div style="font-weight:bold;font-size:14px;">${data.realName}</div><div style="color:#666">@${data.username}</div></div></div>
+    <div class="ins-header">
+        <img src="${imgUrl}" class="ins-img">
+        <div><div style="font-weight:bold;font-size:14px;">${data.realName}</div><div style="color:#666">@${data.username}</div></div>
+        <button id="insSkipBtn" style="${skipBtnStyle}" title="${skipTitle}">${skipIcon}</button>
+    </div>
     <div class="ins-stats"><span>👥 <b>${data.followerCount}</b></span><span style="color:#${color};font-weight:bold;border:1px solid #${color};padding:0 4px;border-radius:4px;">Risk: ${data.score}/100</span><span>${data.postCount} items</span></div>
     
     ${aiHtml}
@@ -666,50 +745,50 @@ function renderInspector(data) {
     
     <div style="text-align:right;margin-bottom:10px;"><button id="showDebugBtn" style="font-size:9px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer;padding:3px 8px;border-radius:4px;">${t("viewDebug")}</button></div>
   `;
+  
+  // Logic for the Inspector Skip Button
+  document.getElementById("insSkipBtn").addEventListener("click", () => {
+      const row = document.querySelector(`.row[data-user="${data.username}"]`);
+      if(row) {
+          toggleSkipUser(data.username, row);
+          renderInspector(data); // Re-render to update icon
+      }
+  });
+
   document.getElementById("showDebugBtn").addEventListener("click", () => showAlert("DEBUG LOG:\n\n"+data.debugLog.join('\n')));
 }
 
 function renderErrorInspector(user, err) { document.getElementById("inspector").innerHTML = `<div style="color:red;text-align:center;padding-top:60px">❌ ${t("errError")} @${user}<br><span style="font-size:10px">${err||t("errUnknown")}</span></div>`; }
-// --- 3. MODIFIED RENDER LIST: Re-Audit Logic ---
+
+// --- RENDER LIST ---
 function renderList(users) { 
     const container = document.getElementById("listContainer"); 
     container.innerHTML = ""; 
     users.forEach(u => { 
         const div = document.createElement("div"); 
-        div.className = "row"; 
+        const isSkipped = skippedUsers.has(u);
+        div.className = isSkipped ? "row skipped" : "row"; 
         div.setAttribute("data-user", u); 
         
-        // Added cursor pointer to the tag to indicate clickability
-        div.innerHTML = `
-            <input type="checkbox" class="user-check" checked>
-            <span class="row-name">@${u}</span>
-            <a href="https://www.threads.net/@${u}" target="_blank" class="ext-link">↗</a>
-            <span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>
-        `; 
+        const checkState = isSkipped ? "disabled" : "checked";
+
+        div.innerHTML = `<input type="checkbox" class="user-check" ${checkState}><span class="row-name">@${u}</span><a href="https://www.threads.net/@${u}" target="_blank" class="ext-link">↗</a><span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>`; 
         
-        // Standard Inspector Click
         div.querySelector(".row-name").addEventListener("click", () => { 
             document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`; 
             performAudit(u, div); 
         }); 
 
-        // --- NEW: Tag Click to Re-Audit ---
         const tagBtn = div.querySelector(".tag");
         tagBtn.addEventListener("click", (e) => {
-            e.stopPropagation(); // Prevent row selection if needed
+            e.stopPropagation(); 
+            if(skippedUsers.has(u)) return;
             
-            // 1. Clear Cache for this user
             delete auditCache[u];
             chrome.storage.local.set({ "audit_db": auditCache });
-            
-            // 2. Visual Feedback
             tagBtn.innerText = "...";
             tagBtn.className = "tag loading";
-            
-            // 3. Show loading in inspector
             document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔄 Re-Auditing <span class="loading-user">@${u}</span>...</div>`;
-            
-            // 4. Run Audit (Pass true to skip cache check if you modify performAudit, but deleting cache above is safer)
             performAudit(u, div);
         });
 
@@ -720,30 +799,73 @@ function renderList(users) {
     if (isRiskFilter) applyFilters(); 
     document.querySelectorAll(".user-check").forEach(b => b.addEventListener("change", updateCount)); 
 }
+
+function toggleSkipUser(username, row) {
+    const checkbox = row.querySelector(".user-check");
+    // skipBtn no longer exists in row, so we don't update it here.
+    
+    if (skippedUsers.has(username)) {
+        // Restore
+        skippedUsers.delete(username);
+        row.classList.remove("skipped");
+        if(checkbox) { checkbox.disabled = false; checkbox.checked = true; }
+    } else {
+        // Skip
+        skippedUsers.add(username);
+        row.classList.add("skipped");
+        if(checkbox) { checkbox.checked = false; checkbox.disabled = true; }
+    }
+    
+    chrome.storage.local.set({ "skipped_users": Array.from(skippedUsers) });
+    updateCount();
+}
+
 function updateTag(tag, data) { tag.className = data.score >= 40 ? "tag red" : "tag green"; tag.innerText = data.score >= 40 ? `RISK ${data.score}` : "SAFE"; }
-function updateCount() { document.getElementById("countLabel").innerText = `${document.querySelectorAll(".user-check:checked").length} selected`; }
+function updateCount() { 
+    const rows = Array.from(document.querySelectorAll(".row"));
+    const visibleChecked = rows.filter(r => {
+        // Must be visible
+        if (r.style.display === "none") return false;
+        
+        // Must be checked and enabled
+        const cb = r.querySelector(".user-check");
+        return cb && cb.checked && !cb.disabled;
+    }).length;
+    
+    document.getElementById("countLabel").innerText = `${visibleChecked} selected`; 
+}
+
 function showToast(msg) { const t = document.getElementById("toast"); t.innerText = msg; t.className = "show"; setTimeout(() => t.className="", 5000); }
-document.getElementById("selectAll").addEventListener("change", (e) => { document.querySelectorAll(".user-check").forEach(b => b.checked = e.target.checked); updateCount(); });
-// --- CLEAR LIST BUTTON ---
+
+document.getElementById("selectAll").addEventListener("change", (e) => {
+  const isChecked = e.target.checked;
+  const rows = document.querySelectorAll(".row");
+  rows.forEach(row => {
+    // Only toggle if visible and not disabled (skipped)
+    if (row.style.display !== "none") {
+      const checkbox = row.querySelector(".user-check");
+      if (checkbox && !checkbox.disabled) checkbox.checked = isChecked;
+    }
+  });
+  updateCount();
+});
+
+// --- CLEAR ---
 document.getElementById("clearListBtn").addEventListener("click", () => {
-    // 1. Confirm with user using translation
     if (!confirm(t("confirmClear"))) return;
 
-    // 2. Clear Data
     extractedUsers = [];
-    chrome.storage.local.set({ "saved_users": [] });
+    skippedUsers.clear();
+    chrome.storage.local.set({ "saved_users": [], "skipped_users": [] });
 
-    // 3. Clear UI
     renderList([]);
     updateCount();
 
-    // 4. Hide Controls (Reset to initial state)
     document.getElementById("userSearch").style.display = "none";
     document.getElementById("filterRiskBtn").style.display = "none";
     document.getElementById("auditBtn").style.display = "none";
     document.getElementById("statsRow").style.display = "none";
 
-    // 5. Show Feedback
     showToast(t("cleared"));
 });
 

@@ -84,5 +84,7 @@
   "btnMerge": "Merge",
   "btnOverwrite": "Overwrite",
   "importPrompt": "Do you want to MERGE this file with your current list?",
-  "btnOk": "OK"
+  "btnOk": "OK",
+  "skipUser": "Mark as Deleted (Skip)",
+  "restoreUser": "Restore User"
 }
