@@ -103,5 +103,9 @@
   "errInvalidUser": "Invalid username (max 30 chars, no spaces).",
   "removeUser": "Remove from list permanently",
   "confirmRemoveUser": "Are you sure you want to remove @{user} from the list?",
-  "userRemoved": "User removed."
+  "userRemoved": "User removed.",
+  "togglePrivacy": "Toggle Privacy (Blur/Unblur)",
+  "batchRemoveTitle": "Remove Selected Users",
+  "confirmBatchRemove": "Are you sure you want to permanently remove {count} selected users?",
+  "batchRemoved": "{count} users removed."
 }

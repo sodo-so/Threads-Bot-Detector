@@ -103,5 +103,9 @@
   "errInvalidUser": "無効なユーザー名 (最大30文字、スペースなし)。",
   "removeUser": "リストから完全に削除",
   "confirmRemoveUser": "@{user} をリストから削除してもよろしいですか？",
-  "userRemoved": "ユーザーを削除しました。"
+  "userRemoved": "ユーザーを削除しました。",
+  "togglePrivacy": "プライバシー切り替え (ぼかし/表示)",
+  "batchRemoveTitle": "選択したユーザーを削除",
+  "confirmBatchRemove": "選択した {count} 人のユーザーを完全に削除してもよろしいですか？",
+  "batchRemoved": "{count} 人のユーザーを削除しました。"
 }

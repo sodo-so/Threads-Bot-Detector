@@ -95,6 +95,31 @@
       border-color: #000;
     }
     .dialog-btn.primary:hover { opacity: 0.8; }
+
+    @media (min-width: 401px) { 
+        body { 
+            flex-direction: row; 
+        } 
+        
+        #inspector { 
+            height: 100vh; 
+            /* CHANGE: Use flex-grow to fill remaining space */
+            flex: 1; 
+            width: auto; 
+            min-width: 0; /* Prevents flexbox overflow issues */
+            border-bottom: none; 
+            border-right: 2px solid #ccc; 
+        } 
+        
+        .list-column { 
+            height: 100vh; 
+            /* CHANGE: Set flexible width with a hard cap */
+            width: 40%; 
+            min-width: 280px; /* Ensure it doesn't get unreadably small */
+            max-width: 320px; /* USER REQUEST: Cap width at 360px */
+            flex-shrink: 0;   /* Prevent it from shrinking if space is tight */
+        } 
+    }
   </style>
 </head>
 <body>
@@ -168,7 +193,10 @@
       <div class="stats-row" id="statsRow" style="display:none; align-items:center;">
         <div style="display:flex; align-items:center; gap:8px;">
           <label><input type="checkbox" id="selectAll" checked> <span data-i18n="selectAll">Select All</span></label>
+          
           <button id="clearListBtn" style="border:none; background:none; cursor:pointer; font-size:14px; padding:0 4px;" title="Clear List">🗑️</button>
+          
+          <button id="batchRemoveBtn" style="border:none; background:none; cursor:pointer; font-size:14px; padding:0 4px; color:#d32f2f;" title="Remove Selected">❌</button>
         </div>
         <span id="countLabel">0 users</span>
       </div>

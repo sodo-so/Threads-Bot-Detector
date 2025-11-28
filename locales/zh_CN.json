@@ -103,5 +103,9 @@
   "errInvalidUser": "无效的用户名 (最多30字，无空格)。",
   "removeUser": "从列表永久移除",
   "confirmRemoveUser": "确定要将 @{user} 从列表中移除吗？",
-  "userRemoved": "用户已移除。"
+  "userRemoved": "用户已移除。",
+  "togglePrivacy": "切换隐私模式 (模糊/显示)",
+  "batchRemoveTitle": "移除选中的用户",
+  "confirmBatchRemove": "确定要永久移除选中的 {count} 位用户吗？",
+  "batchRemoved": "已移除 {count} 位用户。"
 }

@@ -103,5 +103,9 @@
   "errInvalidUser": "유효하지 않은 사용자 이름 (최대 30자, 공백 없음).",
   "removeUser": "목록에서 영구 삭제",
   "confirmRemoveUser": "@{user} 님을 목록에서 제거하시겠습니까?",
-  "userRemoved": "사용자가 제거되었습니다."
+  "userRemoved": "사용자가 제거되었습니다.",
+  "togglePrivacy": "프라이버시 전환 (흐림/표시)",
+  "batchRemoveTitle": "선택한 사용자 삭제",
+  "confirmBatchRemove": "선택한 사용자 {count}명을 영구적으로 삭제하시겠습니까?",
+  "batchRemoved": "{count}명의 사용자가 삭제되었습니다."
 }
