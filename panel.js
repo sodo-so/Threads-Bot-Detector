@@ -314,24 +314,53 @@ document.getElementById("importFileInput").addEventListener("change", (event) =>
     try {
       const json = JSON.parse(e.target.result);
       
-      // MODIFIED: Overwrite extractedUsers instead of merging
-      if (json.users) { 
-          extractedUsers = json.users; // Replaces previous data
-          chrome.storage.local.set({ "saved_users": extractedUsers }); 
+      // Check if current data exists
+      const hasData = extractedUsers.length > 0 || Object.keys(auditCache).length > 0;
+      let doMerge = false;
+
+      // Ask user if data exists
+      if (hasData) {
+          // Use translation for the prompt
+          const msg = t("importPrompt") || "Do you want to MERGE with existing data?\n\n[OK] = Merge\n[Cancel] = Overwrite";
+          doMerge = confirm(msg);
       }
-      
-      // ... existing code ...
-      if (json.cache) auditCache = { ...auditCache, ...json.cache };
+
+      if (doMerge) {
+          // MERGE LOGIC
+          if (json.users) {
+              // Combine arrays and remove duplicates
+              extractedUsers = Array.from(new Set([...extractedUsers, ...json.users]));
+          }
+          if (json.cache) {
+              // Merge objects (new file overwrites overlapping keys)
+              auditCache = { ...auditCache, ...json.cache };
+          }
+      } else {
+          // OVERWRITE LOGIC
+          extractedUsers = json.users || [];
+          auditCache = json.cache || {};
+      }
+
+      // Save & Render
+      chrome.storage.local.set({ "saved_users": extractedUsers });
       chrome.storage.local.set({ "audit_db": auditCache });
-      renderList(extractedUsers); updateCount();
+      
+      renderList(extractedUsers); 
+      updateCount();
+      
+      // Show UI elements
       document.getElementById("userSearch").style.display = "block"; 
       document.getElementById("filterRiskBtn").style.display = "block"; 
       document.getElementById("auditBtn").style.display = "block"; 
       document.getElementById("statsRow").style.display = "flex";
+      
       showToast(`${t("imported")}. Users: ${extractedUsers.length}`);
-    } catch (err) { showToast(t("invalidJson")); }
+    } catch (err) { 
+        showToast(t("invalidJson")); 
+    }
     event.target.value = "";
-  }; reader.readAsText(file);
+  }; 
+  reader.readAsText(file);
 });
 // --- AI UI LOGIC ---
 const providerSelector = document.getElementById("aiProviderSelector");

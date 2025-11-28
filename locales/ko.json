@@ -80,5 +80,6 @@
   "confirmClear": "팔로워 목록을 지우시겠습니까?",
   "clearList": "목록 지우기",
   "errOpenProfile": "먼저 Threads 프로필을 열어주세요.",
-  "errConnect": "페이지 연결 오류."
+  "errConnect": "페이지 연결 오류.",
+  "importPrompt": "이 파일을 현재 목록과 병합하시겠습니까?\n\n[확인] = 병합 (데이터 합치기)\n[취소] = 덮어쓰기 (기존 데이터 삭제)"
 }

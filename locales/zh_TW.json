@@ -80,5 +80,6 @@
   "confirmClear": "確定要清空粉絲列表嗎？",
   "clearList": "清空列表",
   "errOpenProfile": "請先開啟 Threads 個人檔案。",
-  "errConnect": "連線頁面時發生錯誤。"
+  "errConnect": "連線頁面時發生錯誤。",
+  "importPrompt": "您希望將此檔案與目前的列表合併嗎？\n\n點擊 [確定] 合併資料。\n點擊 [取消] 清空並覆寫。"
 }

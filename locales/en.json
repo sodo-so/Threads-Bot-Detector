@@ -80,5 +80,6 @@
   "confirmClear": "Are you sure you want to clear the follower list?",
   "clearList": "Clear List",
   "errOpenProfile": "Open Threads profile first.",
-  "errConnect": "Error connecting to page."
+  "errConnect": "Error connecting to page.",
+  "importPrompt": "Do you want to MERGE this file with your current list?\n\nClick [OK] to Combine/Merge.\nClick [Cancel] to Clear & Overwrite."
 }

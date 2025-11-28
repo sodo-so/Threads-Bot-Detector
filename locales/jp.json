@@ -80,5 +80,6 @@
   "confirmClear": "フォロワーリストをクリアしてもよろしいですか？",
   "clearList": "リストをクリア",
   "errOpenProfile": "先にThreadsのプロフィールを開いてください。",
-  "errConnect": "ページへの接続エラー。"
+  "errConnect": "ページへの接続エラー。",
+  "importPrompt": "このファイルを現在のリストとマージ（統合）しますか？\n\n[OK] = マージする\n[キャンセル] = クリアして上書き"
 }
