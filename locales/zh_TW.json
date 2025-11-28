@@ -107,5 +107,8 @@
   "togglePrivacy": "切換隱私模式 (模糊/顯示)",
   "batchRemoveTitle": "移除選取的用戶",
   "confirmBatchRemove": "確定要永久移除選取的 {count} 位用戶嗎？",
-  "batchRemoved": "已移除 {count} 位用戶。"
+  "batchRemoved": "已移除 {count} 位用戶。",
+  "clearCacheTitle": "清除已選用戶的審核結果",
+  "confirmClearSelected": "確定要清除 {count} 位已選用戶的審核快取嗎？",
+  "cacheClearedBatch": "已清除 {count} 位用戶的快取。"
 }

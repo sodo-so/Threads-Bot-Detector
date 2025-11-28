@@ -107,5 +107,8 @@
   "togglePrivacy": "Toggle Privacy (Blur/Unblur)",
   "batchRemoveTitle": "Remove Selected Users",
   "confirmBatchRemove": "Are you sure you want to permanently remove {count} selected users?",
-  "batchRemoved": "{count} users removed."
+  "batchRemoved": "{count} users removed.",
+  "clearCacheTitle": "Clear audit results for selected users",
+  "confirmClearSelected": "Clear audit cache for {count} selected users?",
+  "cacheClearedBatch": "Cache cleared for {count} users."
 }

@@ -107,5 +107,8 @@
   "togglePrivacy": "切换隐私模式 (模糊/显示)",
   "batchRemoveTitle": "移除选中的用户",
   "confirmBatchRemove": "确定要永久移除选中的 {count} 位用户吗？",
-  "batchRemoved": "已移除 {count} 位用户。"
+  "batchRemoved": "已移除 {count} 位用户。",
+  "clearCacheTitle": "清除选中用户的审核结果",
+  "confirmClearSelected": "确定要清除 {count} 位选中用户的审核缓存吗？",
+  "cacheClearedBatch": "已清除 {count} 位用户的缓存。"
 }

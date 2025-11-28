@@ -716,15 +716,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 });
 
-// --- AUDIT LOOP ---
+// --- AUDIT EXECUTION LOOP ---
 if(document.getElementById("auditBtn")) {
     document.getElementById("auditBtn").addEventListener("click", async () => {
         const btn = document.getElementById("auditBtn");
         if (isAuditing) { stopAuditRequested = true; btn.innerText = t("stopping"); return; }
-
-        // --- PRE-FLIGHT CHECK ---
-        const currentProvider = document.getElementById("aiProviderSelector").value;
-        if (currentProvider === "cloud" && !geminiKey) { showToast(t("enterKey")); return; }
 
         const rows = Array.from(document.querySelectorAll(".row"));
         const checkboxes = rows
@@ -734,109 +730,199 @@ if(document.getElementById("auditBtn")) {
 
         if (!checkboxes.length) return showToast(t("selectUser"));
 
-        isAuditing = true; stopAuditRequested = false; btn.innerText = t("stopAudit"); btn.classList.add("btn-stop");
+        isAuditing = true; 
+        stopAuditRequested = false; 
+        btn.innerText = t("stopAudit"); 
+        btn.classList.add("btn-stop");
+        
         document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("batchStart")}</div>`;
 
         for (let i = 0; i < checkboxes.length; i++) {
+            // Check stop flag at start of iteration
             if (stopAuditRequested) break;
-            const row = checkboxes[i].closest(".row"); const username = row.getAttribute("data-user");
+
+            const row = checkboxes[i].closest(".row"); 
+            const username = row.getAttribute("data-user");
             row.scrollIntoView({ behavior: "smooth", block: "center" });
 
             let delay = 0;
             if (aiProvider === 'disabled' && !auditCache[username]) { delay = 50; }
 
-            const shouldContinue = await performAudit(username, row);
+            // EXECUTE AUDIT - WAIT FOR RESULT
+            const success = await performAudit(username, row);
             
-            if (!shouldContinue) {
+            // IF FAILED/CRITICAL ERROR -> STOP LOOP IMMEDIATELY
+            if (success === false) {
                 stopAuditRequested = true;
-                // Toast already shown inside performAudit
+                // Toast is handled inside performAudit
                 break;
             }
 
             if (delay > 0) await new Promise(r => setTimeout(r, delay));
         }
-        isAuditing = false; btn.innerText = t("audit"); btn.classList.remove("btn-stop");
-        if (stopAuditRequested) showToast(t("auditStopped")); else showToast(t("auditComplete"));
+
+        isAuditing = false; 
+        btn.innerText = t("audit"); 
+        btn.classList.remove("btn-stop");
+        
+        if (stopAuditRequested) showToast(t("auditStopped")); 
+        else showToast(t("auditComplete"));
+        
         if (isRiskFilter) applyFilters();
     });
 }
 
+// --- CORE AUDIT FUNCTION ---
 async function performAudit(username, rowElement) {
     const tag = rowElement.querySelector(".tag");
-    document.querySelectorAll(".row").forEach(r => r.classList.remove("active")); rowElement.classList.add("active");
-    if (auditCache[username]) { renderInspector(auditCache[username]); updateTag(tag, auditCache[username]); return true; }
-    tag.innerText = "..."; tag.className = "tag loading";
+    document.querySelectorAll(".row").forEach(r => r.classList.remove("active")); 
+    rowElement.classList.add("active");
+    
+    // 1. CACHE CHECK (Skip logic if already done)
+    if (auditCache[username]) { 
+        renderInspector(auditCache[username]); 
+        updateTag(tag, auditCache[username]); 
+        return true; // Continue loop
+    }
+    
+    tag.innerText = "..."; 
+    tag.className = "tag loading";
 
     const currentProvider = document.getElementById("aiProviderSelector").value;
     const isCloud = (currentProvider === "cloud");
     const isPuter = (currentProvider === "puter");
 
+    // 2. PRE-FLIGHT CHECKS
+    if (isCloud && !geminiKey) {
+        showToast(t("enterKey"));
+        return false; // STOP
+    }
     if (isPuter && !puterSignedIn) {
-        try { await puter.auth.signIn(); puterSignedIn = true; updateAIUI(); }
-        catch (e) { tag.innerText = t("statusAuth"); tag.className = "tag"; showToast(t("puterSignInReq")); return false; }
+        try { 
+            await puter.auth.signIn(); 
+            puterSignedIn = true; 
+            updateAIUI(); 
+        } catch (e) { 
+            tag.innerText = t("statusAuth"); 
+            tag.className = "tag"; 
+            showToast(t("puterSignInReq")); 
+            return false; // STOP
+        }
     }
 
     try {
         let res = await chrome.runtime.sendMessage({
-            action: "silent_audit", username: username, apiKey: isCloud ? geminiKey : null,
-            cloudModelId: cloudModelSelector.value, skipCloudAI: !isCloud, language: currentLang
+            action: "silent_audit", 
+            username: username, 
+            apiKey: isCloud ? geminiKey : null,
+            cloudModelId: cloudModelSelector.value, 
+            skipCloudAI: !isCloud, // Important: Tells background to skip its own AI if not Cloud
+            language: currentLang
         });
 
         if (res && res.success) {
-            // --- AI ERROR CHECK (QUOTA / KEY) ---
-            if(isCloud && res.debugLog) {
-                const aiError = res.debugLog.find(l => l.includes("AI Error"));
-                if(aiError) {
-                    showToast("🛑 " + aiError.replace("AI Error:", "AI:"));
-                    tag.innerText = "AI ERR";
-                    tag.className = "tag red";
-                    renderErrorInspector(username, aiError);
-                    return false; // STOP BATCH
+            // --- STRICT ERROR CHECKING ---
+            
+            // A. CLOUD AI SPECIFIC CHECKS
+            if (isCloud && res.debugLog) {
+                const logs = res.debugLog.join(" "); 
+                
+                // Check 1: API Errors (Quota/Key)
+                if (logs.includes("AI Error")) {
+                    const errMsg = res.debugLog.find(l => l.includes("AI Error")) || "AI Error";
+                    showToast("🛑 " + errMsg.replace("AI Error:", "AI:"));
+                    tag.innerText = "AI ERR"; tag.className = "tag red";
+                    renderErrorInspector(username, errMsg);
+                    return false; // STOP LOOP
+                }
+
+                // Check 2: Configuration Mismatch (Disabled unexpectedly)
+                if (logs.includes("AI: Disabled")) {
+                    showToast("🛑 Cloud AI Disabled unexpectedly. Stopping.");
+                    tag.innerText = "CFG ERR"; tag.className = "tag red";
+                    return false; // STOP LOOP
                 }
             }
 
+            // B. PUTER AI SPECIFIC CHECKS
             if (isPuter) {
                 tag.innerText = t("statusAi");
-                const historyText = (res.replyData && res.replyData.history.length > 0) ? res.replyData.history.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n") : "(No replies)";
+                
+                const historyText = (res.replyData && res.replyData.history.length > 0) 
+                    ? res.replyData.history.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n") 
+                    : "(No replies)";
+                
                 const prompt = `Role: Cybersecurity Auditor. Target: @${username}. Bio: "${res.bioSnippet}". Main Post: "${res.mainPost.text}". Replies: ${historyText}. Detect Bot/Farm. JSON: { "bot_probability": number (0-100), "reason": "Short reason in ${currentLang}" }`;
+                
                 try {
                     const selectedModel = document.getElementById("puterModelSelector").value;
                     const aiResp = await puter.ai.chat(prompt, { model: selectedModel });
-                    let content = aiResp?.message?.content || "{}"; content = content.replace(/```json|```/g, "").trim();
+                    
+                    if (!aiResp || !aiResp.message) throw new Error("Empty Response");
+
+                    let content = aiResp?.message?.content || "{}"; 
+                    content = content.replace(/```json|```/g, "").trim();
                     const result = JSON.parse(content);
+                    
                     let score = result.bot_probability || 0;
                     if (score <= 1 && score > 0) score = Math.round(score * 100);
+                    
                     res.score = score;
                     res.checklist.push({ special: `🤖 Puter AI: ${score}/100` });
                     res.debugLog.push(`${t("aiAnalysisLocal")}: ${score}/100 - ${result.reason}`);
                     if (result.reason) res.checklist.push({ special: `📝 ${result.reason}` });
-                } catch (aiErr) { res.checklist.push({ special: t("aiFailedPuter") }); }
-            }
-            auditCache[username] = res; chrome.storage.local.set({ "audit_db": auditCache });
-            updateTag(tag, res); renderInspector(res);
-            return true; // CONTINUE
-        } else { 
-            // --- CRITICAL ERRORS ---
-            const err = res?.error || "Unknown";
-            if (err.includes("Rate Limit") || err.includes("429")) {
-                showToast("🛑 Rate Limit (429). Stopping.");
-                tag.innerText = "429"; tag.className = "tag red";
-                return false; // STOP
-            }
-            if (err.includes("Proxy")) {
-                showToast("🛑 Proxy Error. Stopping.");
-                tag.innerText = "PROXY"; tag.className = "tag red";
-                return false; // STOP
+                
+                } catch (aiErr) { 
+                    console.error("Puter AI Error:", aiErr);
+                    
+                    // Mark visually as failed
+                    tag.innerText = "AI FAIL"; 
+                    tag.className = "tag red";
+                    
+                    // Add failure note to data
+                    res.checklist.push({ special: "⚠️ " + t("aiFailedPuter") });
+                    
+                    // Show result so user sees WHICH user failed
+                    auditCache[username] = res; 
+                    renderInspector(res); 
+                    
+                    showToast("🛑 Puter AI Failed. Audit Stopped.");
+                    return false; // CRITICAL: STOP LOOP
+                }
             }
 
-            // Normal Error (404, etc) -> Continue
-            tag.innerText = t("statusErr"); tag.className = "tag"; 
+            // SUCCESS PATH
+            auditCache[username] = res; 
+            chrome.storage.local.set({ "audit_db": auditCache });
+            updateTag(tag, res); 
+            renderInspector(res);
+            return true; // CONTINUE LOOP
+
+        } else { 
+            // --- C. CRITICAL NETWORK / PROXY ERRORS ---
+            const err = res?.error || "Unknown";
+            
+            if (err.includes("Rate Limit") || err.includes("429")) {
+                showToast("🛑 Rate Limit (429). Audit Stopped.");
+                tag.innerText = "429"; tag.className = "tag red";
+                return false; // STOP LOOP
+            }
+            if (err.includes("Proxy")) {
+                showToast("🛑 Proxy Error. Audit Stopped.");
+                tag.innerText = "PROXY"; tag.className = "tag red";
+                return false; // STOP LOOP
+            }
+
+            // D. NON-CRITICAL (e.g. 404 User Not Found) -> LOG & CONTINUE
+            tag.innerText = "ERR"; tag.className = "tag"; 
             renderErrorInspector(username, err);
-            return true; 
+            return true; // CONTINUE LOOP
         }
     } catch (e) { 
+        console.error(e);
         tag.innerText = t("statusFail"); tag.className = "tag"; 
-        return true; // Continue on generic error
+        // Unknown JS error? Safer to continue to next user than crash completely
+        return true; 
     }
 }
 
@@ -1046,4 +1132,60 @@ if (batchRemoveBtn) {
     });
 }
 
-if(document.getElementById("clearCacheBtn")) { document.getElementById("clearCacheBtn").addEventListener("click", () => { chrome.storage.local.remove("audit_db"); auditCache = {}; document.querySelectorAll(".tag").forEach(t => { t.innerText = "Pending"; t.className = "tag"; }); showToast(t("cleared")); }); }
+if(document.getElementById("clearCacheBtn")) {
+    const clearBtn = document.getElementById("clearCacheBtn");
+    
+    // Add Hint (Tooltip)
+    clearBtn.title = t("clearCacheTitle") || "Clear audit results for selected users";
+
+    clearBtn.addEventListener("click", () => {
+        // 1. Identify Selected Users
+        const rows = Array.from(document.querySelectorAll(".row"));
+        const selectedUsers = rows
+            .filter(r => r.style.display !== "none") // Visible rows only
+            .map(r => {
+                const cb = r.querySelector(".user-check");
+                // Only if checked and NOT disabled (skipped users are disabled)
+                if (cb && cb.checked && !cb.disabled) {
+                    return r.getAttribute("data-user");
+                }
+                return null;
+            })
+            .filter(Boolean); // Remove nulls
+
+        // 2. Validation
+        if (selectedUsers.length === 0) {
+            return showToast(t("selectUser"));
+        }
+
+        // 3. Confirmation
+        if (!confirm(t("confirmClearSelected").replace("{count}", selectedUsers.length))) {
+            return;
+        }
+
+        // 4. Perform Clear Action
+        selectedUsers.forEach(user => {
+            delete auditCache[user]; // Remove from memory object
+            
+            // Visual Update: Reset Tag to Pending
+            const row = document.querySelector(`.row[data-user="${user}"]`);
+            if(row) {
+                const tag = row.querySelector(".tag");
+                tag.className = "tag";
+                tag.innerText = "Pending";
+            }
+        });
+
+        // 5. Save to Storage
+        chrome.storage.local.set({ "audit_db": auditCache });
+
+        // 6. Reset Inspector if the currently viewed user was cleared
+        // (Optional check to avoid showing stale data in inspector)
+        const currentInspectorName = document.querySelector(".ins-header .ins-user-wrapper div:last-child")?.innerText?.replace("@", "");
+        if (currentInspectorName && !auditCache[currentInspectorName]) {
+             document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("selectUser")}</div>`;
+        }
+
+        showToast(t("cacheClearedBatch").replace("{count}", selectedUsers.length));
+    });
+}
