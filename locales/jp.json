@@ -40,7 +40,8 @@
   "noRep": "返信なし",
   "fewRep": "返信が少ない (<2)",
   "shortRep": "返信が短い",
-  "filterRisk": "⚠️ リスクのみ",
+  "universalPh": "検索またはユーザー追加...",
+  "filterRisk": "リスク",
   "showAll": "すべて表示",
   "settings": "設定",
   "proxyTitle": "プロキシ設定",
@@ -94,5 +95,13 @@
   "msgOpenModal": "ページ上でフォロワーリストを開いてください。",
   "msgRefresh": "Threadsのページを更新してください。",
   "msgDone": "完了！ +{count} 人追加されました。",
-  "errWrongDomain": "先に Threads (threads.com) を開いてください。"
+  "errWrongDomain": "先に Threads (threads.com) を開いてください。",
+  "manualUserPh": "ユーザー名を入力 (例: zuck)",
+  "btnAdd": "追加",
+  "msgUserAdded": "@{user} を追加しました。",
+  "errUserExists": "ユーザー @{user} は既に存在します。",
+  "errInvalidUser": "無効なユーザー名 (最大30文字、スペースなし)。",
+  "removeUser": "リストから完全に削除",
+  "confirmRemoveUser": "@{user} をリストから削除してもよろしいですか？",
+  "userRemoved": "ユーザーを削除しました。"
 }

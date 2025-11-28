@@ -148,14 +148,23 @@
            <div style="margin-top:8px; color:#d32f2f; font-size:10px; font-style:italic; border-top:1px solid #ddd; padding-top:4px;" data-i18n="proxyNote">Note: AI analysis uses original IP (Direct).</div>
        </div>
     </div>
-
     <div class="control-bar">
       <button id="extractBtn" class="btn" data-i18n="extract">Extract List</button>
+      
       <div style="display:flex; gap:5px; margin-bottom:6px;">
-        <input type="text" id="userSearch" class="search-input" style="margin-bottom:0; flex-grow:1; display:none;" placeholder="Search username...">
-        <button id="filterRiskBtn" class="btn" style="width:auto; margin-bottom:0; background:#d32f2f; color:#fff; display:none; padding: 6px 10px; font-size:11px; white-space: nowrap;" data-i18n="filterRisk">⚠️ Risk Only</button>
+        <input type="text" id="universalInput" class="search-input" style="display:block; margin-bottom:0; flex-grow:1;" placeholder="Search or add user..." data-i18n-ph="universalPh">
+        
+        <button id="addManualUserBtn" class="btn" style="width:40px; margin-bottom:0; background:#0288d1; color:#fff; padding: 0; font-size: 18px; display:flex; align-items:center; justify-content:center;" title="Add User">
+          +
+        </button>
+        
+        <button id="filterRiskBtn" class="btn" style="width:40px; margin-bottom:0; background:#d32f2f; color:#fff; padding: 0; font-size: 14px; display:flex; align-items:center; justify-content:center;" title="Filter Risk">
+          ⚠️
+        </button>
       </div>
+
       <button id="auditBtn" class="btn" data-i18n="audit">Audit Selected</button>
+      
       <div class="stats-row" id="statsRow" style="display:none; align-items:center;">
         <div style="display:flex; align-items:center; gap:8px;">
           <label><input type="checkbox" id="selectAll" checked> <span data-i18n="selectAll">Select All</span></label>

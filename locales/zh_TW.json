@@ -40,7 +40,8 @@
   "noRep": "未找到回覆",
   "fewRep": "回覆極少 (<2)",
   "shortRep": "回覆過短",
-  "filterRisk": "⚠️ 只看風險",
+  "universalPh": "搜尋或新增用戶名...",
+  "filterRisk": "風險",
   "showAll": "顯示全部",
   "settings": "設定",
   "proxyTitle": "代理伺服器設定",
@@ -94,5 +95,13 @@
   "msgOpenModal": "請在頁面上開啟粉絲列表。",
   "msgRefresh": "請重新整理 Threads 頁面。",
   "msgDone": "完成！新增了 +{count} 位用戶。",
-  "errWrongDomain": "請先開啟 Threads (threads.com) 網站。"
+  "errWrongDomain": "請先開啟 Threads (threads.com) 網站。",
+  "manualUserPh": "輸入用戶名 (例如 zuck)",
+  "btnAdd": "新增",
+  "msgUserAdded": "已新增 @{user}。",
+  "errUserExists": "用戶 @{user} 已存在。",
+  "errInvalidUser": "無效的用戶名 (最多30字，無空格)。",
+  "removeUser": "從列表永久移除",
+  "confirmRemoveUser": "確定要將 @{user} 從列表中移除嗎？",
+  "userRemoved": "用戶已移除。"
 }

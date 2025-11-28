@@ -4,12 +4,13 @@ let geminiKey = null;
 let aiProvider = "disabled";
 let currentLang = "en";
 let translations = {};
-let isRiskFilter = false; 
+let isRiskFilter = false;
 let isAuditing = false;
 let stopAuditRequested = false;
 let puterSignedIn = false;
-let puterLibraryLoaded = false; 
+let puterLibraryLoaded = false;
 let skippedUsers = new Set();
+let isExtracting = false;
 
 // PROXY SOURCES
 const PROXY_SOURCES = [
@@ -24,167 +25,192 @@ const styleSheet = document.createElement("style");
 styleSheet.innerText = `
   .row.skipped { background: #f5f5f5 !important; opacity: 0.6; }
   .row.skipped .row-name { text-decoration: line-through; color: #aaa; font-style: italic; }
-  /* Dialog Styles */
 `;
 document.head.appendChild(styleSheet);
 
+// --- LOCALIZATION ---
 async function loadLanguage(lang) {
-  try {
-    const url = chrome.runtime.getURL(`locales/${lang}.json`);
-    const res = await fetch(url);
-    translations = await res.json();
-    updateUILanguage();
-  } catch (e) { if(lang !== 'en') loadLanguage('en'); }
+    try {
+        const url = chrome.runtime.getURL(`locales/${lang}.json`);
+        const res = await fetch(url);
+        translations = await res.json();
+        updateUILanguage();
+    } catch (e) {
+        if (lang !== 'en') loadLanguage('en');
+    }
 }
 
-function t(key) { return translations[key] || key; }
+function t(key) {
+    return translations[key] || key;
+}
 
 function updateUILanguage() {
-  document.querySelectorAll("[data-i18n]").forEach(el => {
-    const key = el.getAttribute("data-i18n");
-    if(translations[key]) el.innerText = translations[key];
-  });
-  if(document.getElementById("userSearch")) document.getElementById("userSearch").placeholder = t("searchPh");
-  const filterBtn = document.getElementById("filterRiskBtn");
-  if(filterBtn) filterBtn.innerText = isRiskFilter ? t("showAll") : t("filterRisk");
-  if (isAuditing) document.getElementById("auditBtn").innerText = stopAuditRequested ? t("stopping") : t("stopAudit");
-  
-  const puterLogin = document.getElementById("puterLoginBtn");
-  if(puterLogin) puterLogin.innerText = t("btnSignInPuter");
+    // 1. Text Content
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        if (translations[key]) el.innerText = translations[key];
+    });
 
-  const debugBtn = document.getElementById("showDebugBtn");
-  if(debugBtn) debugBtn.innerText = t("viewDebug");
+    // 2. Placeholders
+    document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+        const key = el.getAttribute("data-i18n-ph");
+        if (translations[key]) el.placeholder = translations[key];
+    });
 
-  const clearBtn = document.getElementById("clearListBtn");
-  if(clearBtn) clearBtn.title = t("clearList");
+    // 3. Dynamic Elements
+    if (document.getElementById("universalInput")) {
+        document.getElementById("universalInput").placeholder = t("universalPh");
+    }
+    
+    // Note: Risk button is now an icon in HTML, text update removed to preserve icon
+    
+    if (isAuditing) {
+        const auditBtn = document.getElementById("auditBtn");
+        if(auditBtn) auditBtn.innerText = stopAuditRequested ? t("stopping") : t("stopAudit");
+    }
+
+    const puterLogin = document.getElementById("puterLoginBtn");
+    if (puterLogin) puterLogin.innerText = t("btnSignInPuter");
+
+    const debugBtn = document.getElementById("showDebugBtn");
+    if (debugBtn) debugBtn.innerText = t("viewDebug");
+
+    const clearBtn = document.getElementById("clearListBtn");
+    if (clearBtn) clearBtn.title = t("clearList");
 }
 
-document.getElementById("langSelector").addEventListener("change", (e) => {
-  currentLang = e.target.value; chrome.storage.local.set({ "ui_lang": currentLang }); loadLanguage(currentLang);
-});
+const langSelector = document.getElementById("langSelector");
+if(langSelector) {
+    langSelector.addEventListener("change", (e) => {
+        currentLang = e.target.value;
+        chrome.storage.local.set({ "ui_lang": currentLang });
+        loadLanguage(currentLang);
+    });
+}
 
 // --- DIALOG HELPERS ---
-/**
- * Shows a custom confirmation dialog with custom button text.
- * @param {string} message 
- * @param {string} [yesText] - Text for the primary button (default: OK)
- * @param {string} [noText] - Text for the secondary button (default: Cancel)
- */
 function showConfirm(message, yesText = "OK", noText = "Cancel") {
-  return new Promise((resolve) => {
+    return new Promise((resolve) => {
+        const dialog = document.getElementById("appDialog");
+        const textEl = document.getElementById("dialogText");
+        const okBtn = document.getElementById("dialogOkBtn");
+        const cancelBtn = document.getElementById("dialogCancelBtn");
+
+        textEl.innerText = message;
+        okBtn.innerText = yesText;
+        cancelBtn.innerText = noText;
+        cancelBtn.style.display = "block";
+
+        const cleanup = () => {
+            okBtn.removeEventListener("click", handleOk);
+            cancelBtn.removeEventListener("click", handleCancel);
+            dialog.close();
+        };
+
+        const handleOk = () => { cleanup(); resolve(true); };
+        const handleCancel = () => { cleanup(); resolve(false); };
+
+        okBtn.addEventListener("click", handleOk);
+        cancelBtn.addEventListener("click", handleCancel);
+        dialog.showModal();
+    });
+}
+
+function showAlert(message) {
     const dialog = document.getElementById("appDialog");
     const textEl = document.getElementById("dialogText");
     const okBtn = document.getElementById("dialogOkBtn");
     const cancelBtn = document.getElementById("dialogCancelBtn");
 
     textEl.innerText = message;
-    
-    // Apply custom button text
-    okBtn.innerText = yesText;
-    cancelBtn.innerText = noText;
-    cancelBtn.style.display = "block";
+    okBtn.innerText = t("btnOk") !== "btnOk" ? t("btnOk") : "OK";
+    cancelBtn.style.display = "none";
 
-    const cleanup = () => {
-      okBtn.removeEventListener("click", handleOk);
-      cancelBtn.removeEventListener("click", handleCancel);
-      dialog.close();
+    const handleOk = () => {
+        okBtn.removeEventListener("click", handleOk);
+        dialog.close();
     };
 
-    const handleOk = () => { cleanup(); resolve(true); };
-    const handleCancel = () => { cleanup(); resolve(false); };
-
     okBtn.addEventListener("click", handleOk);
-    cancelBtn.addEventListener("click", handleCancel);
-    
     dialog.showModal();
-  });
 }
 
-/**
- * Shows a custom alert dialog (OK button only).
- * @param {string} message 
- */
-function showAlert(message) {
-  const dialog = document.getElementById("appDialog");
-  const textEl = document.getElementById("dialogText");
-  const okBtn = document.getElementById("dialogOkBtn");
-  const cancelBtn = document.getElementById("dialogCancelBtn");
-
-  textEl.innerText = message;
-  
-  // Explicitly reset button text to standard OK (or translated)
-  okBtn.innerText = t("btnOk") !== "btnOk" ? t("btnOk") : "OK";
-  
-  cancelBtn.style.display = "none"; // Hide cancel for alerts
-
-  const handleOk = () => { 
-    okBtn.removeEventListener("click", handleOk);
-    dialog.close(); 
-  };
-
-  okBtn.addEventListener("click", handleOk);
-  dialog.showModal();
+// --- UI TOGGLE HELPER ---
+function toggleUI(show) {
+    const display = show ? "block" : "none";
+    const flexDisplay = show ? "flex" : "none";
+    
+    // Inputs are always visible now in control bar
+    if(document.getElementById("auditBtn")) document.getElementById("auditBtn").style.display = display;
+    if(document.getElementById("statsRow")) document.getElementById("statsRow").style.display = flexDisplay;
 }
 
 // --- INIT ---
 chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode"], (data) => {
-  auditCache = data.audit_db || {};
-  if (data.ui_lang) { currentLang = data.ui_lang; document.getElementById("langSelector").value = currentLang; }
-  loadLanguage(currentLang);
-
-  if (data.skipped_users) {
-      skippedUsers = new Set(data.skipped_users);
-  }
-
-  if (data.saved_users && Array.isArray(data.saved_users)) {
-    extractedUsers = data.saved_users; renderList(extractedUsers);
-    if(extractedUsers.length > 0) {
-      document.getElementById("userSearch").style.display = "block";
-      document.getElementById("filterRiskBtn").style.display = "block"; 
-      document.getElementById("auditBtn").style.display = "block";
-      document.getElementById("statsRow").style.display = "flex";
-      updateCount();
+    auditCache = data.audit_db || {};
+    if (data.ui_lang) {
+        currentLang = data.ui_lang;
+        const ls = document.getElementById("langSelector");
+        if(ls) ls.value = currentLang;
     }
-  }
-  if (data.cloud_model_id) document.getElementById("cloudModelSelector").value = data.cloud_model_id;
-  if (data.puter_model_id) document.getElementById("puterModelSelector").value = data.puter_model_id;
-  
-  if (data.ai_provider) { 
-      aiProvider = (data.ai_provider === "chrome") ? "disabled" : data.ai_provider; 
-      document.getElementById("aiProviderSelector").value = aiProvider; 
-      if(aiProvider === "puter") ensurePuterLoaded(); 
-  }
-  
-  if (data.enc_api_key) { try { geminiKey = atob(data.enc_api_key); } catch (e) {} }
-  
-  // Check Puter Auth
-  if (typeof puter !== 'undefined') checkPuterLogin();
-  updateAIUI();
+    loadLanguage(currentLang);
 
-  if(data.proxy_config) {
-     const p = data.proxy_config;
-     document.getElementById("proxyEnabled").checked = p.enabled;
-     document.getElementById("proxyProto").value = p.proto || "SOCKS5";
-     document.getElementById("proxyHost").value = p.host || "";
-     document.getElementById("proxyPort").value = p.port || "";
-     document.getElementById("proxyUser").value = p.user || "";
-     document.getElementById("proxyPass").value = p.pass || "";
-     toggleProxyInputs(p.enabled);
-  }
-  if (data.privacy_mode) { document.body.classList.add("privacy-mode"); document.getElementById("privacyCheck").checked = true; }
+    if (data.skipped_users) {
+        skippedUsers = new Set(data.skipped_users);
+    }
+
+    if (data.saved_users && Array.isArray(data.saved_users)) {
+        extractedUsers = data.saved_users;
+        renderList(extractedUsers);
+        // If we have users, ensure audit controls are visible
+        if (extractedUsers.length > 0) {
+            toggleUI(true);
+            updateCount();
+        }
+    }
+    if (data.cloud_model_id && document.getElementById("cloudModelSelector")) document.getElementById("cloudModelSelector").value = data.cloud_model_id;
+    if (data.puter_model_id && document.getElementById("puterModelSelector")) document.getElementById("puterModelSelector").value = data.puter_model_id;
+
+    if (data.ai_provider) {
+        aiProvider = (data.ai_provider === "chrome") ? "disabled" : data.ai_provider;
+        if(document.getElementById("aiProviderSelector")) document.getElementById("aiProviderSelector").value = aiProvider;
+        if (aiProvider === "puter") ensurePuterLoaded();
+    }
+
+    if (data.enc_api_key) {
+        try { geminiKey = atob(data.enc_api_key); } catch (e) {}
+    }
+
+    if (typeof puter !== 'undefined') checkPuterLogin();
+    updateAIUI();
+
+    if (data.proxy_config) {
+        const p = data.proxy_config;
+        if(document.getElementById("proxyEnabled")) document.getElementById("proxyEnabled").checked = p.enabled;
+        if(document.getElementById("proxyProto")) document.getElementById("proxyProto").value = p.proto || "SOCKS5";
+        if(document.getElementById("proxyHost")) document.getElementById("proxyHost").value = p.host || "";
+        if(document.getElementById("proxyPort")) document.getElementById("proxyPort").value = p.port || "";
+        if(document.getElementById("proxyUser")) document.getElementById("proxyUser").value = p.user || "";
+        if(document.getElementById("proxyPass")) document.getElementById("proxyPass").value = p.pass || "";
+        toggleProxyInputs(p.enabled);
+    }
+    if (data.privacy_mode) {
+        document.body.classList.add("privacy-mode");
+        if(document.getElementById("privacyCheck")) document.getElementById("privacyCheck").checked = true;
+    }
 });
 
-// --- DYNAMIC LOADER FOR PUTER.JS ---
+// --- PUTER.JS LOADER ---
 function ensurePuterLoaded() {
     if (typeof puter !== 'undefined' || puterLibraryLoaded) {
         checkPuterLogin();
         populatePuterModels();
         return Promise.resolve();
     }
-    
+
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'puter.js'; 
+        script.src = 'puter.js';
         script.onload = () => {
             puterLibraryLoaded = true;
             checkPuterLogin();
@@ -199,49 +225,50 @@ function ensurePuterLoaded() {
     });
 }
 
-// --- DYNAMIC MODEL FETCHERS ---
+// --- MODEL FETCHERS ---
 async function populatePuterModels() {
-    if(typeof puter === 'undefined') return;
+    if (typeof puter === 'undefined') return;
     try {
         let models = [];
-        try { models = await puter.ai.listModels(); } catch(e) {}
-        
-        if(!models || models.length === 0) {
+        try { models = await puter.ai.listModels(); } catch (e) {}
+
+        if (!models || models.length === 0) {
             models = ["gpt-5-nano", "gpt-4o-mini", "gpt-4o", "claude-3-5-sonnet", "gemini-2.0-flash", "mistral-large-latest", "deepseek-chat"];
         }
 
         const selector = document.getElementById("puterModelSelector");
+        if(!selector) return;
         const currentVal = selector.value;
         selector.innerHTML = "";
-        
+
         models.forEach(m => {
             const opt = document.createElement("option");
             const val = typeof m === 'string' ? m : m.id;
             opt.value = val;
             opt.innerText = val;
-            if(val === currentVal) opt.selected = true;
+            if (val === currentVal) opt.selected = true;
             selector.appendChild(opt);
         });
-    } catch(e) { console.error("Puter Model List Error", e); }
+    } catch (e) { console.error("Puter Model List Error", e); }
 }
 
 async function populateGeminiModels() {
-    if(!geminiKey) { showToast(t("enterKey")); return; }
+    if (!geminiKey) { showToast(t("enterKey")); return; }
     const btn = document.getElementById("refreshGeminiBtn");
     btn.innerText = "...";
     try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
-        if(!res.ok) throw new Error("API Error");
+        if (!res.ok) throw new Error("API Error");
         const data = await res.json();
-        
+
         const selector = document.getElementById("cloudModelSelector");
         selector.innerHTML = "";
-        
+
         const validModels = data.models.filter(m => {
             const name = m.name.toLowerCase();
             return (name.includes("gemini-2.5") || name.includes("gemini-3") || name.includes("gemini-2.0") || name.includes("gemini-1.5")) &&
-                   m.supportedGenerationMethods && 
-                   m.supportedGenerationMethods.some(method => method.includes("generateContent"));
+                m.supportedGenerationMethods &&
+                m.supportedGenerationMethods.some(method => method.includes("generateContent"));
         });
 
         validModels.sort((a, b) => b.name.localeCompare(a.name));
@@ -254,67 +281,83 @@ async function populateGeminiModels() {
             selector.appendChild(opt);
         });
         showToast(t("modelsUpdated"));
-    } catch(e) {
+    } catch (e) {
         showToast(t("fetchFailed"));
     } finally {
         btn.innerText = "🔄";
     }
 }
 
-document.getElementById("refreshGeminiBtn").addEventListener("click", populateGeminiModels);
+if(document.getElementById("refreshGeminiBtn")) {
+    document.getElementById("refreshGeminiBtn").addEventListener("click", populateGeminiModels);
+}
 
 // --- SETTINGS UI ---
-document.getElementById("settingsToggleBtn").addEventListener("click", () => document.getElementById("settingsMenu").classList.toggle("show"));
-document.getElementById("closeSettingsBtn").addEventListener("click", () => document.getElementById("settingsMenu").classList.remove("show"));
-document.getElementById("privacyCheck").addEventListener("change", (e) => {
-    const isPrivacy = e.target.checked;
-    if (isPrivacy) document.body.classList.add("privacy-mode"); else document.body.classList.remove("privacy-mode");
-    chrome.storage.local.set({ "privacy_mode": isPrivacy });
-});
+if(document.getElementById("settingsToggleBtn")) {
+    document.getElementById("settingsToggleBtn").addEventListener("click", () => document.getElementById("settingsMenu").classList.toggle("show"));
+}
+if(document.getElementById("closeSettingsBtn")) {
+    document.getElementById("closeSettingsBtn").addEventListener("click", () => document.getElementById("settingsMenu").classList.remove("show"));
+}
+if(document.getElementById("privacyCheck")) {
+    document.getElementById("privacyCheck").addEventListener("change", (e) => {
+        const isPrivacy = e.target.checked;
+        if (isPrivacy) document.body.classList.add("privacy-mode");
+        else document.body.classList.remove("privacy-mode");
+        chrome.storage.local.set({ "privacy_mode": isPrivacy });
+    });
+}
 
 // --- PROXY LOGIC ---
 const proxyEnabledCheck = document.getElementById("proxyEnabled");
 const proxyInputsDiv = document.getElementById("proxyInputs");
-function toggleProxyInputs(enabled) { proxyInputsDiv.style.display = enabled ? "block" : "none"; }
-proxyEnabledCheck.addEventListener("change", (e) => { toggleProxyInputs(e.target.checked); if(!e.target.checked) saveProxySettings(); });
-document.getElementById("saveProxyBtn").addEventListener("click", saveProxySettings);
+function toggleProxyInputs(enabled) { if(proxyInputsDiv) proxyInputsDiv.style.display = enabled ? "block" : "none"; }
 
-document.getElementById("fetchProxyBtn").addEventListener("click", async () => {
-    const btn = document.getElementById("fetchProxyBtn");
-    const originalText = btn.innerText;
-    btn.innerText = t("fetching");
-    btn.disabled = true;
-    let foundProxy = null;
+if(proxyEnabledCheck) {
+    proxyEnabledCheck.addEventListener("change", (e) => { toggleProxyInputs(e.target.checked); if (!e.target.checked) saveProxySettings(); });
+}
+if(document.getElementById("saveProxyBtn")) {
+    document.getElementById("saveProxyBtn").addEventListener("click", saveProxySettings);
+}
 
-    for (const sourceUrl of PROXY_SOURCES) {
-        try {
-            const response = await fetch(sourceUrl);
-            if (!response.ok) continue; 
-            const text = await response.text();
-            const lines = text.split('\n').filter(line => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/.test(line.trim()));
-            if (lines.length > 0) {
-                foundProxy = lines[Math.floor(Math.random() * lines.length)];
-                break; 
-            }
-        } catch (e) { }
-    }
+if(document.getElementById("fetchProxyBtn")) {
+    document.getElementById("fetchProxyBtn").addEventListener("click", async () => {
+        const btn = document.getElementById("fetchProxyBtn");
+        const originalText = btn.innerText;
+        btn.innerText = t("fetching");
+        btn.disabled = true;
+        let foundProxy = null;
 
-    if (foundProxy) {
-        const parts = foundProxy.split(":");
-        if (parts.length >= 2) {
-            document.getElementById("proxyHost").value = parts[0];
-            document.getElementById("proxyPort").value = parts[1];
-            document.getElementById("proxyProto").value = "SOCKS5";
-            document.getElementById("proxyUser").value = "";
-            document.getElementById("proxyPass").value = "";
-            document.getElementById("proxyEnabled").checked = true;
-            toggleProxyInputs(true);
-            saveProxySettings();
-            showToast(`${t("proxyFetched")} ${parts[0]}`);
+        for (const sourceUrl of PROXY_SOURCES) {
+            try {
+                const response = await fetch(sourceUrl);
+                if (!response.ok) continue;
+                const text = await response.text();
+                const lines = text.split('\n').filter(line => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/.test(line.trim()));
+                if (lines.length > 0) {
+                    foundProxy = lines[Math.floor(Math.random() * lines.length)];
+                    break;
+                }
+            } catch (e) { }
         }
-    } else { showToast(t("fetchError")); }
-    btn.innerText = originalText; btn.disabled = false;
-});
+
+        if (foundProxy) {
+            const parts = foundProxy.split(":");
+            if (parts.length >= 2) {
+                document.getElementById("proxyHost").value = parts[0];
+                document.getElementById("proxyPort").value = parts[1];
+                document.getElementById("proxyProto").value = "SOCKS5";
+                document.getElementById("proxyUser").value = "";
+                document.getElementById("proxyPass").value = "";
+                document.getElementById("proxyEnabled").checked = true;
+                toggleProxyInputs(true);
+                saveProxySettings();
+                showToast(`${t("proxyFetched")} ${parts[0]}`);
+            }
+        } else { showToast(t("fetchError")); }
+        btn.innerText = originalText; btn.disabled = false;
+    });
+}
 
 function saveProxySettings() {
     const config = {
@@ -327,155 +370,149 @@ function saveProxySettings() {
     };
     chrome.storage.local.set({ "proxy_config": config }, () => {
         chrome.runtime.sendMessage({ action: "update_proxy", config: config });
-        if (config.enabled && config.host) showToast(t("proxySaved")); else if (!config.enabled) showToast(t("proxyDisabled"));
+        if (config.enabled && config.host) showToast(t("proxySaved"));
+        else if (!config.enabled) showToast(t("proxyDisabled"));
     });
 }
 
 // --- EXPORT/IMPORT ---
-document.getElementById("exportBtn").addEventListener("click", () => {
-  if (extractedUsers.length === 0 && Object.keys(auditCache).length === 0) return showToast(t("nothingExport"));
-  
-  const data = { 
-      timestamp: new Date().toISOString(), 
-      users: extractedUsers, 
-      cache: auditCache,
-      skipped: Array.from(skippedUsers) // Save skipped/deleted state
-  };
-  
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = `threads-audit-backup-${new Date().toISOString().slice(0,10)}.json`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  showToast(t("exported"));
-});
+if(document.getElementById("exportBtn")) {
+    document.getElementById("exportBtn").addEventListener("click", () => {
+        if (extractedUsers.length === 0 && Object.keys(auditCache).length === 0) return showToast(t("nothingExport"));
 
-document.getElementById("exportCsvBtn").addEventListener("click", () => {
-  if (Object.keys(auditCache).length === 0 && extractedUsers.length === 0) {
-      return showToast(t("nothingExport"));
-  }
-  
-  let csvContent = "\uFEFFUsername,Risk Score,Risk Level,Profile URL,Last Audit,AI/Rules Note\n";
-  const allUsers = Array.from(new Set([...extractedUsers, ...Object.keys(auditCache)]));
-  
-  const exportData = allUsers.map(user => {
-      const data = auditCache[user];
-      const isSkipped = skippedUsers.has(user);
-      
-      // Determine Risk Level
-      let riskLevel = "N/A";
-      let riskScore = 0;
-      
-      if (isSkipped) {
-          riskLevel = "SKIPPED"; // Mark explicitly in CSV
-          riskScore = "";
-      } else if (data) {
-          riskScore = data.score || 0;
-          riskLevel = data.score >= 40 ? "HIGH" : "LOW";
-      }
+        const data = {
+            timestamp: new Date().toISOString(),
+            users: extractedUsers,
+            cache: auditCache,
+            skipped: Array.from(skippedUsers)
+        };
 
-      return {
-          user: user,
-          score: riskScore,
-          risk: riskLevel,
-          link: `https://www.threads.net/@${user}`,
-          ai_reason: (data && data.checklist) ? data.checklist.filter(c => typeof c === 'string' ? c.includes("AI") : c.special).map(c => typeof c === 'string' ? c : c.special).join("; ") : "",
-          date: data ? new Date().toLocaleDateString() : "Pending"
-      };
-  });
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = `threads-audit-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+        showToast(t("exported"));
+    });
+}
 
-  // Sort: Skipped last, then by Score desc, then Username asc
-  exportData.sort((a, b) => {
-      if (a.risk === "SKIPPED" && b.risk !== "SKIPPED") return 1;
-      if (a.risk !== "SKIPPED" && b.risk === "SKIPPED") return -1;
-      if (b.score !== a.score) return b.score - a.score;
-      return a.user.localeCompare(b.user);
-  });
+if(document.getElementById("exportCsvBtn")) {
+    document.getElementById("exportCsvBtn").addEventListener("click", () => {
+        if (Object.keys(auditCache).length === 0 && extractedUsers.length === 0) {
+            return showToast(t("nothingExport"));
+        }
 
-  exportData.forEach(row => {
-      const safeReason = `"${row.ai_reason.replace(/"/g, '""')}"`;
-      csvContent += `${row.user},${row.score},${row.risk},${row.link},${row.date},${safeReason}\n`;
-  });
+        let csvContent = "\uFEFFUsername,Risk Score,Risk Level,Profile URL,Last Audit,AI/Rules Note\n";
+        const allUsers = Array.from(new Set([...extractedUsers, ...Object.keys(auditCache)]));
 
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `threads-audit-report-${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast(t("exported"));
-});
+        const exportData = allUsers.map(user => {
+            const data = auditCache[user];
+            const isSkipped = skippedUsers.has(user);
 
-document.getElementById("importBtn").addEventListener("click", () => { document.getElementById("importFileInput").click(); });
+            let riskLevel = "N/A";
+            let riskScore = 0;
 
-// --- IMPORT LOGIC (MERGE/OVERWRITE) ---
-document.getElementById("importFileInput").addEventListener("change", (event) => {
-  const file = event.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  
-  reader.onload = async (e) => {
-    try {
-      const json = JSON.parse(e.target.result);
-      
-      const hasData = extractedUsers.length > 0 || Object.keys(auditCache).length > 0;
-      let doMerge = false;
+            if (isSkipped) {
+                riskLevel = "SKIPPED";
+                riskScore = "";
+            } else if (data) {
+                riskScore = data.score || 0;
+                riskLevel = data.score >= 40 ? "HIGH" : "LOW";
+            }
 
-      if (hasData) {
-          doMerge = await showConfirm(
-              t("importPrompt"), 
-              t("btnMerge"), 
-              t("btnOverwrite")
-          );
-      }
+            return {
+                user: user,
+                score: riskScore,
+                risk: riskLevel,
+                link: `https://www.threads.net/@${user}`,
+                ai_reason: (data && data.checklist) ? data.checklist.filter(c => typeof c === 'string' ? c.includes("AI") : c.special).map(c => typeof c === 'string' ? c : c.special).join("; ") : "",
+                date: data ? new Date().toLocaleDateString() : "Pending"
+            };
+        });
 
-      if (doMerge) {
-          // --- MERGE LOGIC ---
-          if (json.users) extractedUsers = Array.from(new Set([...extractedUsers, ...json.users]));
-          if (json.cache) auditCache = { ...auditCache, ...json.cache };
-          
-          // Merge skipped users
-          if (json.skipped && Array.isArray(json.skipped)) {
-              json.skipped.forEach(u => skippedUsers.add(u));
-          }
-      } else {
-          // --- OVERWRITE LOGIC ---
-          extractedUsers = json.users || [];
-          auditCache = json.cache || {};
-          
-          // Overwrite skipped users
-          if (json.skipped && Array.isArray(json.skipped)) {
-              skippedUsers = new Set(json.skipped);
-          } else {
-              skippedUsers.clear();
-          }
-      }
+        exportData.sort((a, b) => {
+            if (a.risk === "SKIPPED" && b.risk !== "SKIPPED") return 1;
+            if (a.risk !== "SKIPPED" && b.risk === "SKIPPED") return -1;
+            if (b.score !== a.score) return b.score - a.score;
+            return a.user.localeCompare(b.user);
+        });
 
-      // Save all states
-      chrome.storage.local.set({ 
-          "saved_users": extractedUsers,
-          "audit_db": auditCache,
-          "skipped_users": Array.from(skippedUsers) 
-      });
-      
-      renderList(extractedUsers); 
-      updateCount();
-      
-      document.getElementById("userSearch").style.display = "block"; 
-      document.getElementById("filterRiskBtn").style.display = "block"; 
-      document.getElementById("auditBtn").style.display = "block"; 
-      document.getElementById("statsRow").style.display = "flex";
-      
-      showToast(`${t("imported")}. Users: ${extractedUsers.length}`);
-    } catch (err) { 
-        console.error(err);
-        showToast(t("invalidJson")); 
-    }
-    event.target.value = "";
-  }; 
-  reader.readAsText(file);
-});
+        exportData.forEach(row => {
+            const safeReason = `"${row.ai_reason.replace(/"/g, '""')}"`;
+            csvContent += `${row.user},${row.score},${row.risk},${row.link},${row.date},${safeReason}\n`;
+        });
+
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `threads-audit-report-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast(t("exported"));
+    });
+}
+
+if(document.getElementById("importBtn")) {
+    document.getElementById("importBtn").addEventListener("click", () => { document.getElementById("importFileInput").click(); });
+}
+
+if(document.getElementById("importFileInput")) {
+    document.getElementById("importFileInput").addEventListener("change", (event) => {
+        const file = event.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+
+        reader.onload = async (e) => {
+            try {
+                const json = JSON.parse(e.target.result);
+                const hasData = extractedUsers.length > 0 || Object.keys(auditCache).length > 0;
+                let doMerge = false;
+
+                if (hasData) {
+                    doMerge = await showConfirm(
+                        t("importPrompt"),
+                        t("btnMerge"),
+                        t("btnOverwrite")
+                    );
+                }
+
+                if (doMerge) {
+                    if (json.users) extractedUsers = Array.from(new Set([...extractedUsers, ...json.users]));
+                    if (json.cache) auditCache = { ...auditCache, ...json.cache };
+                    if (json.skipped && Array.isArray(json.skipped)) {
+                        json.skipped.forEach(u => skippedUsers.add(u));
+                    }
+                } else {
+                    extractedUsers = json.users || [];
+                    auditCache = json.cache || {};
+                    if (json.skipped && Array.isArray(json.skipped)) {
+                        skippedUsers = new Set(json.skipped);
+                    } else {
+                        skippedUsers.clear();
+                    }
+                }
+
+                chrome.storage.local.set({
+                    "saved_users": extractedUsers,
+                    "audit_db": auditCache,
+                    "skipped_users": Array.from(skippedUsers)
+                });
+
+                renderList(extractedUsers);
+                updateCount();
+                toggleUI(true);
+
+                showToast(`${t("imported")}. Users: ${extractedUsers.length}`);
+            } catch (err) {
+                console.error(err);
+                showToast(t("invalidJson"));
+            }
+            event.target.value = "";
+        };
+        reader.readAsText(file);
+    });
+}
 
 // --- AI UI LOGIC ---
 const providerSelector = document.getElementById("aiProviderSelector");
@@ -487,340 +524,418 @@ const aiInputArea = document.getElementById("aiInputArea");
 const aiRemoveArea = document.getElementById("aiRemoveArea");
 const keyStatus = document.getElementById("keyStatus");
 
-// Create Login Button for Puter
 const puterLoginBtn = document.createElement("button");
 puterLoginBtn.className = "btn";
 puterLoginBtn.style.cssText = "background:#007bff; color:white; font-size:11px; margin-top:5px; padding:6px; display:none;";
 puterLoginBtn.id = "puterLoginBtn";
 puterLoginBtn.innerText = t("btnSignInPuter");
 puterLoginBtn.onclick = loginToPuter;
-puterControls.appendChild(puterLoginBtn);
+if(puterControls) puterControls.appendChild(puterLoginBtn);
 
 async function checkPuterLogin() {
     if (typeof puter === 'undefined') {
         showToast(t("puterNotLoaded"));
         return;
     }
-    try { puterSignedIn = puter.auth.isSignedIn(); updateAIUI(); } catch (e) {}
+    try { puterSignedIn = puter.auth.isSignedIn(); updateAIUI(); } catch (e) { }
 }
 async function loginToPuter() {
     try { await puter.auth.signIn(); puterSignedIn = true; updateAIUI(); showToast(t("signInSuccess")); } catch (e) { showToast(t("signInFailed")); }
 }
 
-providerSelector.addEventListener("change", (e) => { 
-    aiProvider = e.target.value; 
-    chrome.storage.local.set({ "ai_provider": aiProvider }); 
-    if (aiProvider === "puter") ensurePuterLoaded(); 
-    updateAIUI(); 
-});
-cloudModelSelector.addEventListener("change", (e) => chrome.storage.local.set({ "cloud_model_id": e.target.value }));
-puterModelSelector.addEventListener("change", (e) => chrome.storage.local.set({ "puter_model_id": e.target.value }));
-
-function updateAIUI() {
-  cloudControls.style.display = "none"; puterControls.style.display = "none"; keyStatus.innerText = ""; keyStatus.className = "";
-  if (aiProvider === "cloud") {
-    cloudControls.style.display = "flex";
-    if (geminiKey) { keyStatus.innerText = "(Ready)"; keyStatus.className = "status-saved"; aiInputArea.style.display = "none"; aiRemoveArea.style.display = "block"; } 
-    else { keyStatus.innerText = "(No Key)"; keyStatus.className = "status-missing"; aiInputArea.style.display = "block"; aiRemoveArea.style.display = "none"; }
-  } else if (aiProvider === "puter") {
-      puterControls.style.display = "block"; 
-      if (puterSignedIn) {
-          keyStatus.innerText = "(Ready)"; keyStatus.className = "status-saved";
-          puterLoginBtn.style.display = "none"; puterModelSelector.style.display = "block";
-      } else {
-          keyStatus.innerText = "(Login Req)"; keyStatus.className = "status-missing";
-          puterLoginBtn.style.display = "block"; puterModelSelector.style.display = "none";
-      }
-  }
+if(providerSelector) {
+    providerSelector.addEventListener("change", (e) => {
+        aiProvider = e.target.value;
+        chrome.storage.local.set({ "ai_provider": aiProvider });
+        if (aiProvider === "puter") ensurePuterLoaded();
+        updateAIUI();
+    });
+}
+if(cloudModelSelector) {
+    cloudModelSelector.addEventListener("change", (e) => chrome.storage.local.set({ "cloud_model_id": e.target.value }));
+}
+if(puterModelSelector) {
+    puterModelSelector.addEventListener("change", (e) => chrome.storage.local.set({ "puter_model_id": e.target.value }));
 }
 
-document.getElementById("saveKeyBtn").addEventListener("click", () => {
-  const rawKey = document.getElementById("apiKeyInput").value.trim();
-  if (!rawKey) return showToast(t("enterKey"));
-  chrome.storage.local.set({ "enc_api_key": btoa(rawKey) }, () => { geminiKey = rawKey; document.getElementById("apiKeyInput").value = ""; updateAIUI(); showToast(t("keySaved")); });
-});
-document.getElementById("removeKeyBtn").addEventListener("click", () => { chrome.storage.local.remove("enc_api_key", () => { geminiKey = null; updateAIUI(); showToast(t("keyRemoved")); }); });
-
-// ... existing variables ...
-let isExtracting = false;
-const extractBtn = document.getElementById("extractBtn");
-
-// --- CLICK HANDLER ---
-extractBtn.addEventListener("click", async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  // 1. URL CHECK
-  if (!tab.url.match(/threads\.(net|com)/)) {
-    return showToast(t("errWrongDomain") || "Please open Threads first");
-  }
-
-  // STOP Logic
-  if (isExtracting) {
-    chrome.tabs.sendMessage(tab.id, { action: "stop_extraction" });
-    extractBtn.innerText = t("stopping"); // Existing key
-    return;
-  }
-
-  // START Logic
-  isExtracting = true;
-  extractBtn.innerText = t("btnInit"); // "Initializing..."
-  extractBtn.disabled = true;
-  
-  chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }, () => {
-    if (chrome.runtime.lastError) {
-      isExtracting = false;
-      extractBtn.disabled = false;
-      extractBtn.innerText = t("extract");
-      return showToast(t("msgRefresh")); // "Please refresh..."
+function updateAIUI() {
+    if(cloudControls) cloudControls.style.display = "none"; 
+    if(puterControls) puterControls.style.display = "none"; 
+    if(keyStatus) {
+        keyStatus.innerText = ""; keyStatus.className = "";
     }
     
-    extractBtn.disabled = false;
-    chrome.tabs.sendMessage(tab.id, { action: "extract_followers" });
-  });
-});
+    if (aiProvider === "cloud") {
+        if(cloudControls) cloudControls.style.display = "flex";
+        if (geminiKey) { 
+            if(keyStatus) { keyStatus.innerText = "(Ready)"; keyStatus.className = "status-saved"; }
+            if(aiInputArea) aiInputArea.style.display = "none"; 
+            if(aiRemoveArea) aiRemoveArea.style.display = "block"; 
+        } else { 
+            if(keyStatus) { keyStatus.innerText = "(No Key)"; keyStatus.className = "status-missing"; }
+            if(aiInputArea) aiInputArea.style.display = "block"; 
+            if(aiRemoveArea) aiRemoveArea.style.display = "none"; 
+        }
+    } else if (aiProvider === "puter") {
+        if(puterControls) puterControls.style.display = "block";
+        if (puterSignedIn) {
+            if(keyStatus) { keyStatus.innerText = "(Ready)"; keyStatus.className = "status-saved"; }
+            puterLoginBtn.style.display = "none"; 
+            if(puterModelSelector) puterModelSelector.style.display = "block";
+        } else {
+            if(keyStatus) { keyStatus.innerText = "(Login Req)"; keyStatus.className = "status-missing"; }
+            puterLoginBtn.style.display = "block"; 
+            if(puterModelSelector) puterModelSelector.style.display = "none";
+        }
+    }
+}
 
-// --- MESSAGE LISTENER ---
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+if(document.getElementById("saveKeyBtn")) {
+    document.getElementById("saveKeyBtn").addEventListener("click", () => {
+        const rawKey = document.getElementById("apiKeyInput").value.trim();
+        if (!rawKey) return showToast(t("enterKey"));
+        chrome.storage.local.set({ "enc_api_key": btoa(rawKey) }, () => { geminiKey = rawKey; document.getElementById("apiKeyInput").value = ""; updateAIUI(); showToast(t("keySaved")); });
+    });
+}
+if(document.getElementById("removeKeyBtn")) {
+    document.getElementById("removeKeyBtn").addEventListener("click", () => { chrome.storage.local.remove("enc_api_key", () => { geminiKey = null; updateAIUI(); showToast(t("keyRemoved")); }); });
+}
 
-  // A. WAITING MODE
-  if (msg.action === "waiting_for_modal") {
-    extractBtn.innerText = t("btnOpenModal"); // "⚠️ Open Followers List..."
-    extractBtn.style.background = "#f57c00"; 
-    extractBtn.style.color = "#fff";
-    showToast(t("msgOpenModal")); // "Please open the Followers list..."
-  }
+// --- MANUAL ADD USER (Updated for Universal Input) ---
+const manualAddBtn = document.getElementById("addManualUserBtn");
+const universalInput = document.getElementById("universalInput");
 
-  // B. STARTED
-  if (msg.action === "extraction_started") {
-    const stopText = t("btnStopFound").replace("{count}", "0");
-    extractBtn.innerText = stopText; 
-    extractBtn.style.background = "#b71c1c"; 
-  }
+if(manualAddBtn && universalInput) {
+    manualAddBtn.addEventListener("click", () => {
+        const rawValue = universalInput.value.trim();
 
-  // C. PROGRESS
-  if (msg.action === "extraction_progress") {
-    const stopText = t("btnStopFound").replace("{count}", msg.count);
-    extractBtn.innerText = stopText;
-  }
+        // Cleanup: Remove @, spaces, and URL parts
+        let username = rawValue.replace('@', '').replace('threads.net/', '').replace('threads.com/', '').replace('https://www.', '').replace('https://', '').replace(/\/$/, "");
 
-  // D. COMPLETED
-  if (msg.action === "extraction_complete") {
-    isExtracting = false;
-    extractBtn.innerText = t("extract");
-    extractBtn.style.background = "#000"; 
+        const isValid = /^[a-zA-Z0-9._]{1,30}$/.test(username);
 
-    const incomingUsers = msg.data || [];
-    const prevLen = extractedUsers.length;
-    
-    extractedUsers = Array.from(new Set([...extractedUsers, ...incomingUsers]));
-    const newCount = extractedUsers.length - prevLen;
+        if (!isValid) {
+            return showToast(t("errInvalidUser"));
+        }
 
-    chrome.storage.local.set({ "saved_users": extractedUsers });
-    renderList(extractedUsers);
-    
-    document.getElementById("userSearch").style.display = "block";
-    document.getElementById("filterRiskBtn").style.display = "block";
-    document.getElementById("auditBtn").style.display = "block";
-    document.getElementById("statsRow").style.display = "flex";
-    updateCount();
+        if (extractedUsers.includes(username)) {
+            return showToast(t("errUserExists").replace("{user}", username));
+        }
 
-    const doneText = t("msgDone").replace("{count}", newCount);
-    showToast(doneText);
-  }
-});
+        extractedUsers.push(username);
+        chrome.storage.local.set({ "saved_users": extractedUsers });
 
-// --- MAIN AUDIT LOOP & FILTERING ---
+        renderList(extractedUsers);
+        
+        // IMPORTANT: Clear input and re-apply filters to show new user
+        universalInput.value = "";
+        applyFilters(); 
+        toggleUI(true);
+
+        showToast(t("msgUserAdded").replace("{user}", username));
+    });
+
+    universalInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") manualAddBtn.click();
+    });
+}
+
+// --- FILTER & AUDIT (Updated for Universal Input) ---
 function applyFilters() {
-  const term = document.getElementById("userSearch").value.toLowerCase().trim();
-  const container = document.getElementById("listContainer");
-  let rows = Array.from(document.querySelectorAll(".row"));
+    const termEl = document.getElementById("universalInput"); // Now using Universal Input
+    if(!termEl) return;
+    const term = termEl.value.toLowerCase().trim();
+    const container = document.getElementById("listContainer");
+    let rows = Array.from(document.querySelectorAll(".row"));
 
-  // 1. Sort by Risk if Filter is Active
-  if (isRiskFilter) {
-      rows.sort((a, b) => {
-          const userA = a.getAttribute("data-user");
-          const userB = b.getAttribute("data-user");
-          const scoreA = (auditCache[userA] && typeof auditCache[userA].score === 'number') ? auditCache[userA].score : 0;
-          const scoreB = (auditCache[userB] && typeof auditCache[userB].score === 'number') ? auditCache[userB].score : 0;
-          return scoreB - scoreA; // Descending order (High risk first)
-      });
-  }
-
-  // 2. Filter and Re-order DOM
-  rows.forEach(r => {
-    const username = r.getAttribute("data-user");
-    const data = auditCache[username];
-    
-    // Search Matching
-    const matchesSearch = !term || username.toLowerCase().includes(term);
-    
-    // Risk Matching
-    let matchesRisk = true;
     if (isRiskFilter) {
-        // Hide if NOT audited yet OR Score is LOW (< 40)
-        if (!data || data.score < 40) {
-            matchesRisk = false;
+        rows.sort((a, b) => {
+            const userA = a.getAttribute("data-user");
+            const userB = b.getAttribute("data-user");
+            const scoreA = (auditCache[userA] && typeof auditCache[userA].score === 'number') ? auditCache[userA].score : 0;
+            const scoreB = (auditCache[userB] && typeof auditCache[userB].score === 'number') ? auditCache[userB].score : 0;
+            return scoreB - scoreA;
+        });
+    }
+
+    rows.forEach(r => {
+        const username = r.getAttribute("data-user");
+        const data = auditCache[username];
+        const matchesSearch = !term || username.toLowerCase().includes(term);
+        
+        let matchesRisk = true;
+        if (isRiskFilter) {
+            if (!data || data.score < 40) {
+                matchesRisk = false;
+            }
+        }
+
+        if (matchesSearch && matchesRisk) {
+            r.style.display = "flex";
+            container.appendChild(r);
+        } else {
+            r.style.display = "none";
+        }
+    });
+
+    updateCount();
+}
+
+if(document.getElementById("universalInput")) {
+    document.getElementById("universalInput").addEventListener("input", applyFilters);
+}
+
+if(document.getElementById("filterRiskBtn")) {
+    document.getElementById("filterRiskBtn").addEventListener("click", () => {
+        const hasAuditData = Object.keys(auditCache).length > 0;
+        if (!hasAuditData && !isRiskFilter) {
+            showToast(t("nothingExport") || "No audit data yet. Please audit users first.");
+            return;
+        }
+
+        isRiskFilter = !isRiskFilter;
+        const btn = document.getElementById("filterRiskBtn");
+
+        // Styling logic for Icon Button
+        if (isRiskFilter) {
+            btn.style.opacity = "1";
+            btn.style.border = "2px solid #b71c1c";
+            btn.style.background = "#ffebee";
+            btn.style.color = "#b71c1c";
+        } else {
+            btn.style.opacity = "1";
+            btn.style.border = "none";
+            btn.style.background = "#d32f2f";
+            btn.style.color = "#fff";
+        }
+
+        applyFilters();
+    });
+}
+
+// --- EXTRACTION LOGIC ---
+const extractBtn = document.getElementById("extractBtn");
+
+if(extractBtn) {
+    extractBtn.addEventListener("click", async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+        // URL CHECK
+        if (!tab.url.match(/threads\.(net|com)/)) {
+            return showToast(t("errWrongDomain") || "Please open Threads first");
+        }
+
+        // STOP Logic
+        if (isExtracting) {
+            chrome.tabs.sendMessage(tab.id, { action: "stop_extraction" });
+            extractBtn.innerText = t("stopping");
+            return;
+        }
+
+        // START Logic
+        isExtracting = true;
+        extractBtn.innerText = t("btnInit");
+        extractBtn.disabled = true;
+
+        chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }, () => {
+            if (chrome.runtime.lastError) {
+                isExtracting = false;
+                extractBtn.disabled = false;
+                extractBtn.innerText = t("extract");
+                return showToast(t("msgRefresh"));
+            }
+
+            extractBtn.disabled = false;
+            chrome.tabs.sendMessage(tab.id, { action: "extract_followers" });
+        });
+    });
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    // A. WAITING MODE
+    if (msg.action === "waiting_for_modal") {
+        if(extractBtn) {
+            extractBtn.innerText = t("btnOpenModal");
+            extractBtn.style.background = "#f57c00";
+            extractBtn.style.color = "#fff";
+        }
+        showToast(t("msgOpenModal"));
+    }
+
+    // B. STARTED
+    if (msg.action === "extraction_started") {
+        if(extractBtn) {
+            const stopText = t("btnStopFound").replace("{count}", "0");
+            extractBtn.innerText = stopText;
+            extractBtn.style.background = "#b71c1c";
         }
     }
 
-    if (matchesSearch && matchesRisk) {
-        r.style.display = "flex";
-        container.appendChild(r); // Move to end (re-ordering DOM based on sort)
-    } else {
-        r.style.display = "none";
+    // C. PROGRESS
+    if (msg.action === "extraction_progress") {
+        if(extractBtn) {
+            const stopText = t("btnStopFound").replace("{count}", msg.count);
+            extractBtn.innerText = stopText;
+        }
     }
-  });
 
-  updateCount();
+    // D. COMPLETED
+    if (msg.action === "extraction_complete") {
+        isExtracting = false;
+        if(extractBtn) {
+            extractBtn.innerText = t("extract");
+            extractBtn.style.background = "#000";
+        }
+
+        const incomingUsers = msg.data || [];
+        const prevLen = extractedUsers.length;
+
+        extractedUsers = Array.from(new Set([...extractedUsers, ...incomingUsers]));
+        const newCount = extractedUsers.length - prevLen;
+
+        chrome.storage.local.set({ "saved_users": extractedUsers });
+        renderList(extractedUsers);
+
+        toggleUI(true);
+        updateCount();
+
+        const doneText = t("msgDone").replace("{count}", newCount);
+        showToast(doneText);
+    }
+});
+
+// --- AUDIT EXECUTION ---
+if(document.getElementById("auditBtn")) {
+    document.getElementById("auditBtn").addEventListener("click", async () => {
+        const btn = document.getElementById("auditBtn");
+        if (isAuditing) { stopAuditRequested = true; btn.innerText = t("stopping"); return; }
+
+        const rows = Array.from(document.querySelectorAll(".row"));
+        const checkboxes = rows
+            .filter(r => r.style.display !== "none")
+            .map(r => r.querySelector(".user-check:checked:not(:disabled)"))
+            .filter(Boolean);
+
+        if (!checkboxes.length) return showToast(t("selectUser"));
+
+        isAuditing = true; stopAuditRequested = false; btn.innerText = t("stopAudit"); btn.classList.add("btn-stop");
+        document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("batchStart")}</div>`;
+
+        for (let i = 0; i < checkboxes.length; i++) {
+            if (stopAuditRequested) break;
+            const row = checkboxes[i].closest(".row"); const username = row.getAttribute("data-user");
+            row.scrollIntoView({ behavior: "smooth", block: "center" });
+
+            let delay = 0;
+            if (aiProvider === 'disabled' && !auditCache[username]) { delay = 50; }
+
+            await performAudit(username, row);
+            if (delay > 0) await new Promise(r => setTimeout(r, delay));
+        }
+        isAuditing = false; btn.innerText = t("audit"); btn.classList.remove("btn-stop");
+        if (stopAuditRequested) showToast(t("auditStopped")); else showToast(t("auditComplete"));
+        if (isRiskFilter) applyFilters();
+    });
 }
-
-document.getElementById("userSearch").addEventListener("input", applyFilters);
-
-document.getElementById("filterRiskBtn").addEventListener("click", () => {
-    // UX: Check if we even have audit data to filter
-    const hasAuditData = Object.keys(auditCache).length > 0;
-    if (!hasAuditData && !isRiskFilter) {
-        showToast(t("nothingExport") || "No audit data yet. Please audit users first.");
-        return; 
-    }
-
-    isRiskFilter = !isRiskFilter;
-    const btn = document.getElementById("filterRiskBtn");
-    
-    if (isRiskFilter) { 
-        btn.style.opacity = "1"; 
-        btn.style.border = "2px solid #b71c1c"; 
-        btn.style.background = "#ffebee";
-        btn.style.color = "#b71c1c";
-        btn.innerText = t("showAll"); 
-    } else { 
-        btn.style.opacity = "1"; 
-        btn.style.border = "none"; 
-        btn.style.background = "#d32f2f";
-        btn.style.color = "#fff";
-        btn.innerText = t("filterRisk"); 
-    }
-    
-    applyFilters();
-});
-
-document.getElementById("auditBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("auditBtn");
-  if (isAuditing) { stopAuditRequested = true; btn.innerText = t("stopping"); return; }
-  
-  // --- SELECT VISIBLE, CHECKED, ENABLED ---
-  const rows = Array.from(document.querySelectorAll(".row"));
-  const checkboxes = rows
-      .filter(r => r.style.display !== "none") // Only visible rows
-      .map(r => r.querySelector(".user-check:checked:not(:disabled)")) // Only checked & active
-      .filter(Boolean); // Remove nulls
-  
-  if (!checkboxes.length) return showToast(t("selectUser"));
-  
-  isAuditing = true; stopAuditRequested = false; btn.innerText = t("stopAudit"); btn.classList.add("btn-stop");
-  document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("batchStart")}</div>`;
-  
-  for (let i = 0; i < checkboxes.length; i++) {
-    if (stopAuditRequested) break;
-    const row = checkboxes[i].closest(".row"); const username = row.getAttribute("data-user");
-    row.scrollIntoView({ behavior: "smooth", block: "center" });
-    
-    let delay = 0;
-    if (aiProvider === 'disabled' && !auditCache[username]) { delay = 50; }
-    
-    await performAudit(username, row);
-    if(delay > 0) await new Promise(r => setTimeout(r, delay));
-  }
-  isAuditing = false; btn.innerText = t("audit"); btn.classList.remove("btn-stop");
-  if (stopAuditRequested) showToast(t("auditStopped")); else showToast(t("auditComplete"));
-  if (isRiskFilter) applyFilters();
-});
 
 async function performAudit(username, rowElement) {
-  const tag = rowElement.querySelector(".tag");
-  document.querySelectorAll(".row").forEach(r => r.classList.remove("active")); rowElement.classList.add("active");
-  if (auditCache[username]) { renderInspector(auditCache[username]); updateTag(tag, auditCache[username]); return; }
-  tag.innerText = "..."; tag.className = "tag loading";
-  
-  const currentProvider = document.getElementById("aiProviderSelector").value;
-  const isCloud = (currentProvider === "cloud");
-  const isPuter = (currentProvider === "puter");
+    const tag = rowElement.querySelector(".tag");
+    document.querySelectorAll(".row").forEach(r => r.classList.remove("active")); rowElement.classList.add("active");
+    if (auditCache[username]) { renderInspector(auditCache[username]); updateTag(tag, auditCache[username]); return; }
+    tag.innerText = "..."; tag.className = "tag loading";
 
-  if (isPuter && !puterSignedIn) {
-      try { await puter.auth.signIn(); puterSignedIn = true; updateAIUI(); } 
-      catch (e) { tag.innerText = t("statusAuth"); tag.className = "tag"; showToast(t("puterSignInReq")); return; }
-  }
+    const currentProvider = document.getElementById("aiProviderSelector").value;
+    const isCloud = (currentProvider === "cloud");
+    const isPuter = (currentProvider === "puter");
 
-  try {
-    let res = await chrome.runtime.sendMessage({ 
-      action: "silent_audit", username: username, apiKey: isCloud ? geminiKey : null,
-      cloudModelId: cloudModelSelector.value, skipCloudAI: !isCloud, language: currentLang
-    });
+    if (isPuter && !puterSignedIn) {
+        try { await puter.auth.signIn(); puterSignedIn = true; updateAIUI(); }
+        catch (e) { tag.innerText = t("statusAuth"); tag.className = "tag"; showToast(t("puterSignInReq")); return; }
+    }
 
-    if (res && res.success) {
-      if (isPuter) {
-          tag.innerText = t("statusAi"); 
-          const historyText = (res.replyData && res.replyData.history.length > 0) ? res.replyData.history.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n") : "(No reply history found)";
-          const prompt = `Role: Strict Cybersecurity Auditor. Target: @${username}. Bio: "${res.bioSnippet}". Main Post Content: "${res.mainPost.text}". Replies: ${historyText}. Task: Detect "Follower Farm/Bot". Respond ONLY in JSON: { "bot_probability": number (0-100), "reason": "Short explanation in ${currentLang}" }`;
-          try {
-             const selectedModel = document.getElementById("puterModelSelector").value;
-             const aiResp = await puter.ai.chat(prompt, { model: selectedModel }); 
-             let content = aiResp?.message?.content || "{}"; content = content.replace(/```json|```/g, "").trim();
-             const result = JSON.parse(content);
-             
-             let score = result.bot_probability || 0;
-             if (score <= 1 && score > 0) score = Math.round(score * 100);
-             
-             res.score = score; 
-             res.checklist.push({ special: `🤖 Puter AI: ${score}/100` });
-             res.debugLog.push(`${t("aiAnalysisLocal")}: ${score}/100 - ${result.reason}`);
-             if (result.reason) res.checklist.push({ special: `📝 ${result.reason}` });
-          } catch (aiErr) { res.checklist.push({ special: t("aiFailedPuter") }); }
-      }
-      auditCache[username] = res; chrome.storage.local.set({ "audit_db": auditCache });
-      updateTag(tag, res); renderInspector(res);
-    } else { tag.innerText = t("statusErr"); tag.className = "tag"; renderErrorInspector(username, res?.error); }
-  } catch (e) { tag.innerText = t("statusFail"); tag.className = "tag"; }
+    try {
+        let res = await chrome.runtime.sendMessage({
+            action: "silent_audit", username: username, apiKey: isCloud ? geminiKey : null,
+            cloudModelId: cloudModelSelector.value, skipCloudAI: !isCloud, language: currentLang
+        });
+
+        if (res && res.success) {
+            if (isPuter) {
+                tag.innerText = t("statusAi");
+                const historyText = (res.replyData && res.replyData.history.length > 0) ? res.replyData.history.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n") : "(No reply history found)";
+                const prompt = `Role: Strict Cybersecurity Auditor. Target: @${username}. Bio: "${res.bioSnippet}". Main Post Content: "${res.mainPost.text}". Replies: ${historyText}. Task: Detect "Follower Farm/Bot". Respond ONLY in JSON: { "bot_probability": number (0-100), "reason": "Short explanation in ${currentLang}" }`;
+                try {
+                    const selectedModel = document.getElementById("puterModelSelector").value;
+                    const aiResp = await puter.ai.chat(prompt, { model: selectedModel });
+                    let content = aiResp?.message?.content || "{}"; content = content.replace(/```json|```/g, "").trim();
+                    const result = JSON.parse(content);
+
+                    let score = result.bot_probability || 0;
+                    if (score <= 1 && score > 0) score = Math.round(score * 100);
+
+                    res.score = score;
+                    res.checklist.push({ special: `🤖 Puter AI: ${score}/100` });
+                    res.debugLog.push(`${t("aiAnalysisLocal")}: ${score}/100 - ${result.reason}`);
+                    if (result.reason) res.checklist.push({ special: `📝 ${result.reason}` });
+                } catch (aiErr) { res.checklist.push({ special: t("aiFailedPuter") }); }
+            }
+            auditCache[username] = res; chrome.storage.local.set({ "audit_db": auditCache });
+            updateTag(tag, res); renderInspector(res);
+        } else { tag.innerText = t("statusErr"); tag.className = "tag"; renderErrorInspector(username, res?.error); }
+    } catch (e) { tag.innerText = t("statusFail"); tag.className = "tag"; }
 }
 
+// ... existing code ...
+
 function renderInspector(data) {
-  const div = document.getElementById("inspector");
-  const color = data.score >= 40 ? "d32f2f" : "2e7d32";
-  const imgUrl = (data.avatar && !data.avatar.includes("null")) ? data.avatar : "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png";
-  
-  // Skip Button Config
-  const isSkipped = skippedUsers.has(data.username);
-  const skipIcon = isSkipped ? "↩️" : "🗑️";
-  const skipTitle = isSkipped ? t("restoreUser") : t("skipUser");
-  const skipBtnStyle = "margin-left:auto; border:1px solid #ccc; background:#fff; cursor:pointer; font-size:16px; padding:4px 8px; border-radius:4px; height:32px; width:32px; display:flex; align-items:center; justify-content:center;";
+    const div = document.getElementById("inspector");
+    const color = data.score >= 40 ? "d32f2f" : "2e7d32";
+    const imgUrl = (data.avatar && !data.avatar.includes("null")) ? data.avatar : "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png";
 
-  let mainPostHtml = data.mainPost.exists ? `<div class="ins-post-main"><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span class="activity-badge badge-Main">MAIN POST</span><span style="color:#999;font-size:10px;">${data.mainPost.dateStr}</span></div><div style="color:#333;">${data.mainPost.text}</div></div>` : `<div class="ins-post-main" style="border-left:4px solid #d32f2f;background:#ffebee;color:#d32f2f;font-weight:bold;">${t("noMain")}</div>`;
-  let replyContentHtml = ""; let avgLabel = "";
-  if (data.replyData && data.replyData.exists) {
-    const avgColor = (data.replyData.avgLength < 20) ? "d32f2f" : "2e7d32"; avgLabel = `<span style="font-weight:bold;color:#${avgColor}">Avg: ${data.replyData.avgLength}</span>`;
-    replyContentHtml = (data.replyData.history.length > 0) ? data.replyData.history.map(item => `<div class="reply-card"><div style="text-align:right;font-size:10px;color:#999;margin-bottom:4px;border-bottom:1px solid #eee;">${item.reply.date ? new Date(item.reply.date*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : ""}</div>${(item.context && item.context.user !== "Unknown") ? `<div style="background:#eee;color:#666;padding:6px;border-radius:4px;margin-bottom:6px;font-style:italic;font-size:11px;border-left:2px solid #ccc;"><strong>@${item.context.user}:</strong> ${item.context.text.substring(0,80)}...</div>` : ""}<div style="color:#000;"><strong style="color:#444;">@${item.reply.user}:</strong> ${item.reply.text}</div></div>`).join('') : "<div style='color:#999;padding:10px;'>...</div>";
-  } else { replyContentHtml = "<div style='color:#999;padding:10px;'>...</div>"; }
+    const isSkipped = skippedUsers.has(data.username);
+    const skipIcon = isSkipped ? "↩️" : "🗑️";
+    const skipTitle = isSkipped ? t("restoreUser") : t("skipUser");
+    
+    // Shared button style
+    const btnBaseStyle = "border:1px solid #ccc; background:#fff; cursor:pointer; font-size:16px; padding:4px 8px; border-radius:4px; height:32px; width:32px; display:flex; align-items:center; justify-content:center;";
+    
+    // Remove Button (Left) - Has margin-left:auto to push group to the right
+    const removeBtnStyle = `${btnBaseStyle} margin-left:auto; margin-right:8px; color:red; border-color:#ffcdd2;`;
+    
+    // Skip Button (Right)
+    const skipBtnStyle = `${btnBaseStyle}`;
 
-  const aiItems = data.checklist.filter(i => i.special && (i.special.includes("AI") || i.special.includes("📝") || i.special.includes("⚠️")));
-  const ruleItems = data.checklist.filter(i => !i.special || !(i.special.includes("AI") || i.special.includes("📝") || i.special.includes("⚠️")));
+    let mainPostHtml = data.mainPost.exists ? `<div class="ins-post-main"><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span class="activity-badge badge-Main">MAIN POST</span><span style="color:#999;font-size:10px;">${data.mainPost.dateStr}</span></div><div style="color:#333;">${data.mainPost.text}</div></div>` : `<div class="ins-post-main" style="border-left:4px solid #d32f2f;background:#ffebee;color:#d32f2f;font-weight:bold;">${t("noMain")}</div>`;
+    
+    let replyContentHtml = ""; let avgLabel = "";
+    if (data.replyData && data.replyData.exists) {
+        const avgColor = (data.replyData.avgLength < 20) ? "d32f2f" : "2e7d32"; avgLabel = `<span style="font-weight:bold;color:#${avgColor}">Avg: ${data.replyData.avgLength}</span>`;
+        replyContentHtml = (data.replyData.history.length > 0) ? data.replyData.history.map(item => `<div class="reply-card"><div style="text-align:right;font-size:10px;color:#999;margin-bottom:4px;border-bottom:1px solid #eee;">${item.reply.date ? new Date(item.reply.date * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ""}</div>${(item.context && item.context.user !== "Unknown") ? `<div style="background:#eee;color:#666;padding:6px;border-radius:4px;margin-bottom:6px;font-style:italic;font-size:11px;border-left:2px solid #ccc;"><strong>@${item.context.user}:</strong> ${item.context.text.substring(0, 80)}...</div>` : ""}<div style="color:#000;"><strong style="color:#444;">@${item.reply.user}:</strong> ${item.reply.text}</div></div>`).join('') : "<div style='color:#999;padding:10px;'>...</div>";
+    } else { replyContentHtml = "<div style='color:#999;padding:10px;'>...</div>"; }
 
-  let aiHtml = "";
-  if(aiItems.length > 0) {
-      aiHtml = `<div class="ins-ai-section">
+    const aiItems = data.checklist.filter(i => i.special && (i.special.includes("AI") || i.special.includes("📝") || i.special.includes("⚠️")));
+    const ruleItems = data.checklist.filter(i => !i.special || !(i.special.includes("AI") || i.special.includes("📝") || i.special.includes("⚠️")));
+
+    let aiHtml = "";
+    if (aiItems.length > 0) {
+        aiHtml = `<div class="ins-ai-section">
         ${aiItems.map(i => {
             const text = i.special || i;
-            if(text.includes("AI")) return `<span class="ins-ai-title">${text}</span>`;
+            if (text.includes("AI")) return `<span class="ins-ai-title">${text}</span>`;
             return `<div class="ins-ai-content">${text}</div>`;
         }).join('')}
       </div>`;
-  }
+    }
 
-  const ruleHtml = ruleItems.map(item => { if (item.key) return `<li>${t(item.key)}${item.val ? ` (${item.val})` : ""}${item.score ? ` (+${item.score})` : ""}</li>`; return `<li>${item}</li>`; }).join('');
+    const ruleHtml = ruleItems.map(item => { if (item.key) return `<li>${t(item.key)}${item.val ? ` (${item.val})` : ""}${item.score ? ` (+${item.score})` : ""}</li>`; return `<li>${item}</li>`; }).join('');
 
-  div.innerHTML = `
+    div.innerHTML = `
     <div class="ins-header">
         <img src="${imgUrl}" class="ins-img">
         <div><div style="font-weight:bold;font-size:14px;">${data.realName}</div><div style="color:#666">@${data.username}</div></div>
+        
+        <button id="insRemoveBtn" style="${removeBtnStyle}" title="${t("removeUser")}">❌</button>
+        
         <button id="insSkipBtn" style="${skipBtnStyle}" title="${skipTitle}">${skipIcon}</button>
     </div>
     <div class="ins-stats"><span>👥 <b>${data.followerCount}</b></span><span style="color:#${color};font-weight:bold;border:1px solid #${color};padding:0 4px;border-radius:4px;">Risk: ${data.score}/100</span><span>${data.postCount} items</span></div>
@@ -837,45 +952,75 @@ function renderInspector(data) {
     
     <div style="text-align:right;margin-bottom:10px;"><button id="showDebugBtn" style="font-size:9px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer;padding:3px 8px;border-radius:4px;">${t("viewDebug")}</button></div>
   `;
-  
-  // Logic for the Inspector Skip Button
-  document.getElementById("insSkipBtn").addEventListener("click", () => {
-      const row = document.querySelector(`.row[data-user="${data.username}"]`);
-      if(row) {
-          toggleSkipUser(data.username, row);
-          renderInspector(data); // Re-render to update icon
-      }
-  });
 
-  document.getElementById("showDebugBtn").addEventListener("click", () => showAlert("DEBUG LOG:\n\n"+data.debugLog.join('\n')));
+    // Existing Skip Handler
+    document.getElementById("insSkipBtn").addEventListener("click", () => {
+        const row = document.querySelector(`.row[data-user="${data.username}"]`);
+        if (row) {
+            toggleSkipUser(data.username, row);
+            renderInspector(data);
+        }
+    });
+
+    // NEW: Remove Handler
+    document.getElementById("insRemoveBtn").addEventListener("click", () => {
+        if(confirm(t("confirmRemoveUser").replace("{user}", data.username))) {
+            removeUserPermanently(data.username);
+        }
+    });
+
+    document.getElementById("showDebugBtn").addEventListener("click", () => showAlert("DEBUG LOG:\n\n" + data.debugLog.join('\n')));
 }
 
-function renderErrorInspector(user, err) { document.getElementById("inspector").innerHTML = `<div style="color:red;text-align:center;padding-top:60px">❌ ${t("errError")} @${user}<br><span style="font-size:10px">${err||t("errUnknown")}</span></div>`; }
+// NEW Helper Function
+function removeUserPermanently(username) {
+    // 1. Remove from Data Structures
+    extractedUsers = extractedUsers.filter(u => u !== username);
+    delete auditCache[username];
+    skippedUsers.delete(username);
 
-// --- RENDER LIST ---
-function renderList(users) { 
-    const container = document.getElementById("listContainer"); 
-    container.innerHTML = ""; 
-    users.forEach(u => { 
-        const div = document.createElement("div"); 
+    // 2. Save
+    chrome.storage.local.set({
+        "saved_users": extractedUsers,
+        "audit_db": auditCache,
+        "skipped_users": Array.from(skippedUsers)
+    });
+
+    // 3. Update UI
+    renderList(extractedUsers);
+    updateCount();
+    
+    // 4. Reset Inspector
+    document.getElementById("inspector").innerHTML = `<div class="ins-empty">${t("selectUser")}</div>`;
+    
+    showToast(t("userRemoved"));
+}
+
+function renderErrorInspector(user, err) { document.getElementById("inspector").innerHTML = `<div style="color:red;text-align:center;padding-top:60px">❌ ${t("errError")} @${user}<br><span style="font-size:10px">${err || t("errUnknown")}</span></div>`; }
+
+function renderList(users) {
+    const container = document.getElementById("listContainer");
+    container.innerHTML = "";
+    users.forEach(u => {
+        const div = document.createElement("div");
         const isSkipped = skippedUsers.has(u);
-        div.className = isSkipped ? "row skipped" : "row"; 
-        div.setAttribute("data-user", u); 
-        
+        div.className = isSkipped ? "row skipped" : "row";
+        div.setAttribute("data-user", u);
+
         const checkState = isSkipped ? "disabled" : "checked";
 
-        div.innerHTML = `<input type="checkbox" class="user-check" ${checkState}><span class="row-name">@${u}</span><a href="https://www.threads.net/@${u}" target="_blank" class="ext-link">↗</a><span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>`; 
-        
-        div.querySelector(".row-name").addEventListener("click", () => { 
-            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`; 
-            performAudit(u, div); 
-        }); 
+        div.innerHTML = `<input type="checkbox" class="user-check" ${checkState}><span class="row-name">@${u}</span><a href="https://www.threads.net/@${u}" target="_blank" class="ext-link">↗</a><span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>`;
+
+        div.querySelector(".row-name").addEventListener("click", () => {
+            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`;
+            performAudit(u, div);
+        });
 
         const tagBtn = div.querySelector(".tag");
         tagBtn.addEventListener("click", (e) => {
-            e.stopPropagation(); 
-            if(skippedUsers.has(u)) return;
-            
+            e.stopPropagation();
+            if (skippedUsers.has(u)) return;
+
             delete auditCache[u];
             chrome.storage.local.set({ "audit_db": auditCache });
             tagBtn.innerText = "...";
@@ -884,82 +1029,76 @@ function renderList(users) {
             performAudit(u, div);
         });
 
-        if (auditCache[u]) updateTag(tagBtn, auditCache[u]); 
-        container.appendChild(div); 
-    }); 
-    
-    if (isRiskFilter) applyFilters(); 
-    document.querySelectorAll(".user-check").forEach(b => b.addEventListener("change", updateCount)); 
+        if (auditCache[u]) updateTag(tagBtn, auditCache[u]);
+        container.appendChild(div);
+    });
+
+    if (isRiskFilter) applyFilters();
+    document.querySelectorAll(".user-check").forEach(b => b.addEventListener("change", updateCount));
 }
 
 function toggleSkipUser(username, row) {
     const checkbox = row.querySelector(".user-check");
-    // skipBtn no longer exists in row, so we don't update it here.
-    
+
     if (skippedUsers.has(username)) {
-        // Restore
         skippedUsers.delete(username);
         row.classList.remove("skipped");
-        if(checkbox) { checkbox.disabled = false; checkbox.checked = true; }
+        if (checkbox) { checkbox.disabled = false; checkbox.checked = true; }
     } else {
-        // Skip
         skippedUsers.add(username);
         row.classList.add("skipped");
-        if(checkbox) { checkbox.checked = false; checkbox.disabled = true; }
+        if (checkbox) { checkbox.checked = false; checkbox.disabled = true; }
     }
-    
+
     chrome.storage.local.set({ "skipped_users": Array.from(skippedUsers) });
     updateCount();
 }
 
 function updateTag(tag, data) { tag.className = data.score >= 40 ? "tag red" : "tag green"; tag.innerText = data.score >= 40 ? `RISK ${data.score}` : "SAFE"; }
 
-// --- UPDATE COUNT (Visible Only) ---
-function updateCount() { 
+function updateCount() {
     const rows = Array.from(document.querySelectorAll(".row"));
     const visibleChecked = rows.filter(r => {
-        // Must be visible
         if (r.style.display === "none") return false;
-        // Must be checked and enabled
         const cb = r.querySelector(".user-check");
         return cb && cb.checked && !cb.disabled;
     }).length;
-    
-    document.getElementById("countLabel").innerText = `${visibleChecked} selected`; 
+
+    document.getElementById("countLabel").innerText = `${visibleChecked} selected`;
 }
 
-function showToast(msg) { const t = document.getElementById("toast"); t.innerText = msg; t.className = "show"; setTimeout(() => t.className="", 5000); }
+function showToast(msg) { const t = document.getElementById("toast"); t.innerText = msg; t.className = "show"; setTimeout(() => t.className = "", 5000); }
 
-document.getElementById("selectAll").addEventListener("change", (e) => {
-  const isChecked = e.target.checked;
-  const rows = document.querySelectorAll(".row");
-  rows.forEach(row => {
-    // Only toggle if visible and not disabled (skipped)
-    if (row.style.display !== "none") {
-      const checkbox = row.querySelector(".user-check");
-      if (checkbox && !checkbox.disabled) checkbox.checked = isChecked;
-    }
-  });
-  updateCount();
-});
+if(document.getElementById("selectAll")) {
+    document.getElementById("selectAll").addEventListener("change", (e) => {
+        const isChecked = e.target.checked;
+        const rows = document.querySelectorAll(".row");
+        rows.forEach(row => {
+            if (row.style.display !== "none") {
+                const checkbox = row.querySelector(".user-check");
+                if (checkbox && !checkbox.disabled) checkbox.checked = isChecked;
+            }
+        });
+        updateCount();
+    });
+}
 
-// --- CLEAR ---
-document.getElementById("clearListBtn").addEventListener("click", () => {
-    if (!confirm(t("confirmClear"))) return;
+if(document.getElementById("clearListBtn")) {
+    document.getElementById("clearListBtn").addEventListener("click", () => {
+        if (!confirm(t("confirmClear"))) return;
 
-    extractedUsers = [];
-    skippedUsers.clear();
-    chrome.storage.local.set({ "saved_users": [], "skipped_users": [] });
+        extractedUsers = [];
+        skippedUsers.clear();
+        chrome.storage.local.set({ "saved_users": [], "skipped_users": [] });
 
-    renderList([]);
-    updateCount();
+        renderList([]);
+        updateCount();
+        toggleUI(false);
 
-    document.getElementById("userSearch").style.display = "none";
-    document.getElementById("filterRiskBtn").style.display = "none";
-    document.getElementById("auditBtn").style.display = "none";
-    document.getElementById("statsRow").style.display = "none";
+        showToast(t("cleared"));
+    });
+}
 
-    showToast(t("cleared"));
-});
-
-document.getElementById("clearCacheBtn").addEventListener("click", () => { chrome.storage.local.remove("audit_db"); auditCache = {}; document.querySelectorAll(".tag").forEach(t => { t.innerText="Pending"; t.className="tag"; }); showToast(t("cleared")); });
+if(document.getElementById("clearCacheBtn")) {
+    document.getElementById("clearCacheBtn").addEventListener("click", () => { chrome.storage.local.remove("audit_db"); auditCache = {}; document.querySelectorAll(".tag").forEach(t => { t.innerText = "Pending"; t.className = "tag"; }); showToast(t("cleared")); });
+}

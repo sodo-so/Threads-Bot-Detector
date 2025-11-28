@@ -40,7 +40,8 @@
   "noRep": "未找到回复",
   "fewRep": "回复极少 (<2)",
   "shortRep": "回复过短",
-  "filterRisk": "⚠️ 只看风险",
+  "universalPh": "搜尋或新增用戶名...",
+  "filterRisk": "風險",
   "showAll": "显示全部",
   "settings": "设置",
   "proxyTitle": "代理服务器设置",
@@ -94,5 +95,13 @@
   "msgOpenModal": "请在页面上开启粉丝列表。",
   "msgRefresh": "请刷新 Threads 页面。",
   "msgDone": "完成！新增了 +{count} 位用户。",
-  "errWrongDomain": "请先开启 Threads (threads.com) 网站。"
+  "errWrongDomain": "请先开启 Threads (threads.com) 网站。",
+  "manualUserPh": "输入用户名 (例如 zuck)",
+  "btnAdd": "添加",
+  "msgUserAdded": "已添加 @{user}。",
+  "errUserExists": "用户 @{user} 已存在。",
+  "errInvalidUser": "无效的用户名 (最多30字，无空格)。",
+  "removeUser": "从列表永久移除",
+  "confirmRemoveUser": "确定要将 @{user} 从列表中移除吗？",
+  "userRemoved": "用户已移除。"
 }

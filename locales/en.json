@@ -40,7 +40,8 @@
   "noRep": "No Replies Found",
   "fewRep": "Few Replies (<2)",
   "shortRep": "Short Replies",
-  "filterRisk": "⚠️ Risk Only",
+  "universalPh": "Search or add username...",
+  "filterRisk": "Risk",
   "showAll": "Show All",
   "settings": "Settings",
   "proxyTitle": "Proxy Settings",
@@ -94,5 +95,13 @@
   "msgOpenModal": "Please open the Followers list on the page.",
   "msgRefresh": "Please refresh the Threads page.",
   "msgDone": "Done! +{count} new users.",
-  "errWrongDomain": "Please open Threads (threads.com) first."
+  "errWrongDomain": "Please open Threads (threads.com) first.",
+  "manualUserPh": "Enter username (e.g. zuck)",
+  "btnAdd": "Add",
+  "msgUserAdded": "User @{user} added.",
+  "errUserExists": "User @{user} is already in the list.",
+  "errInvalidUser": "Invalid username (max 30 chars, no spaces).",
+  "removeUser": "Remove from list permanently",
+  "confirmRemoveUser": "Are you sure you want to remove @{user} from the list?",
+  "userRemoved": "User removed."
 }

@@ -40,7 +40,8 @@
   "noRep": "답글 없음",
   "fewRep": "답글 부족 (<2)",
   "shortRep": "짧은 답글",
-  "filterRisk": "⚠️ 위험만 보기",
+  "universalPh": "검색 또는 사용자 추가...",
+  "filterRisk": "위험",
   "showAll": "모두 보기",
   "settings": "설정",
   "proxyTitle": "프록시 설정",
@@ -94,5 +95,13 @@
   "msgOpenModal": "페이지에서 팔로워 목록을 열어주세요.",
   "msgRefresh": "Threads 페이지를 새로고침하세요.",
   "msgDone": "완료! +{count}명이 추가되었습니다.",
-  "errWrongDomain": "먼저 Threads (threads.com) 를 열어주세요."
+  "errWrongDomain": "먼저 Threads (threads.com) 를 열어주세요.",
+  "manualUserPh": "사용자 이름 입력 (예: zuck)",
+  "btnAdd": "추가",
+  "msgUserAdded": "@{user} 추가됨.",
+  "errUserExists": "사용자 @{user} 가 이미 목록에 있습니다.",
+  "errInvalidUser": "유효하지 않은 사용자 이름 (최대 30자, 공백 없음).",
+  "removeUser": "목록에서 영구 삭제",
+  "confirmRemoveUser": "@{user} 님을 목록에서 제거하시겠습니까?",
+  "userRemoved": "사용자가 제거되었습니다."
 }
