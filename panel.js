@@ -419,13 +419,11 @@ document.getElementById("removeKeyBtn").addEventListener("click", () => { chrome
 document.getElementById("extractBtn").addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   
-  // MODIFIED: Use translation key
   if (!tab.url.includes("threads")) return showToast(t("errOpenProfile")); 
   
   chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }, () => {
     chrome.tabs.sendMessage(tab.id, { action: "extract_followers" }, (res) => {
       
-      // MODIFIED: Use translation key
       if (chrome.runtime.lastError) return showToast(t("errConnect")); 
       
       if (!res || !res.success) {
@@ -433,14 +431,27 @@ document.getElementById("extractBtn").addEventListener("click", async () => {
           return showToast(errorMsg);
       }
 
-      extractedUsers = res.data; 
+      // --- NEW MERGE LOGIC ---
+      const incomingUsers = res.data || [];
+      const previousCount = extractedUsers.length;
+
+      // Combine existing users with new ones and remove duplicates using Set
+      extractedUsers = Array.from(new Set([...extractedUsers, ...incomingUsers]));
+      
+      const addedCount = extractedUsers.length - previousCount;
+      // -----------------------
+
       chrome.storage.local.set({ "saved_users": extractedUsers }); 
       renderList(extractedUsers);
+      
       document.getElementById("userSearch").style.display = "block"; 
       document.getElementById("filterRiskBtn").style.display = "block"; 
       document.getElementById("auditBtn").style.display = "block"; 
       document.getElementById("statsRow").style.display = "flex"; 
       updateCount();
+
+      // Show toast: "Added X new users (Total: Y)"
+      showToast(`+${addedCount} new (Total: ${extractedUsers.length})`);
     });
   });
 });
