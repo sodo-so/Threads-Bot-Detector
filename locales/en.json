@@ -81,5 +81,8 @@
   "clearList": "Clear List",
   "errOpenProfile": "Open Threads profile first.",
   "errConnect": "Error connecting to page.",
-  "importPrompt": "Do you want to MERGE this file with your current list?\n\nClick [OK] to Combine/Merge.\nClick [Cancel] to Clear & Overwrite."
+  "btnMerge": "Merge",
+  "btnOverwrite": "Overwrite",
+  "importPrompt": "Do you want to MERGE this file with your current list?",
+  "btnOk": "OK"
 }

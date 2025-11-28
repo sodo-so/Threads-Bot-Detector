@@ -307,57 +307,47 @@ document.getElementById("exportCsvBtn").addEventListener("click", () => {
 });
 
 document.getElementById("importBtn").addEventListener("click", () => { document.getElementById("importFileInput").click(); });
+// --- 2. MODIFIED IMPORT LOGIC ---
 document.getElementById("importFileInput").addEventListener("change", (event) => {
   const file = event.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  
+  reader.onload = async (e) => {
     try {
       const json = JSON.parse(e.target.result);
       
-      // Check if current data exists
       const hasData = extractedUsers.length > 0 || Object.keys(auditCache).length > 0;
       let doMerge = false;
 
-      // Ask user if data exists
       if (hasData) {
-          // Use translation for the prompt
-          const msg = t("importPrompt") || "Do you want to MERGE with existing data?\n\n[OK] = Merge\n[Cancel] = Overwrite";
-          doMerge = confirm(msg);
+          // Pass translated button labels here
+          doMerge = await showConfirm(
+              t("importPrompt"), 
+              t("btnMerge"),      // "Merge" / "合并"
+              t("btnOverwrite")   // "Overwrite" / "覆盖"
+          );
       }
 
       if (doMerge) {
-          // MERGE LOGIC
-          if (json.users) {
-              // Combine arrays and remove duplicates
-              extractedUsers = Array.from(new Set([...extractedUsers, ...json.users]));
-          }
-          if (json.cache) {
-              // Merge objects (new file overwrites overlapping keys)
-              auditCache = { ...auditCache, ...json.cache };
-          }
+          if (json.users) extractedUsers = Array.from(new Set([...extractedUsers, ...json.users]));
+          if (json.cache) auditCache = { ...auditCache, ...json.cache };
       } else {
-          // OVERWRITE LOGIC
           extractedUsers = json.users || [];
           auditCache = json.cache || {};
       }
 
-      // Save & Render
       chrome.storage.local.set({ "saved_users": extractedUsers });
       chrome.storage.local.set({ "audit_db": auditCache });
-      
       renderList(extractedUsers); 
       updateCount();
       
-      // Show UI elements
       document.getElementById("userSearch").style.display = "block"; 
       document.getElementById("filterRiskBtn").style.display = "block"; 
       document.getElementById("auditBtn").style.display = "block"; 
       document.getElementById("statsRow").style.display = "flex";
       
       showToast(`${t("imported")}. Users: ${extractedUsers.length}`);
-    } catch (err) { 
-        showToast(t("invalidJson")); 
-    }
+    } catch (err) { showToast(t("invalidJson")); }
     event.target.value = "";
   }; 
   reader.readAsText(file);
@@ -557,6 +547,71 @@ async function performAudit(username, rowElement) {
   } catch (e) { tag.innerText = t("statusFail"); tag.className = "tag"; }
 }
 
+// --- 1. MODIFIED HELPER: Custom Buttons ---
+/**
+ * Shows a custom confirmation dialog with custom button text.
+ * @param {string} message 
+ * @param {string} [yesText] - Text for the primary button (default: OK)
+ * @param {string} [noText] - Text for the secondary button (default: Cancel)
+ */
+function showConfirm(message, yesText = "OK", noText = "Cancel") {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById("appDialog");
+    const textEl = document.getElementById("dialogText");
+    const okBtn = document.getElementById("dialogOkBtn");
+    const cancelBtn = document.getElementById("dialogCancelBtn");
+
+    textEl.innerText = message;
+    
+    // Apply custom button text
+    okBtn.innerText = yesText;
+    cancelBtn.innerText = noText;
+    
+    cancelBtn.style.display = "block";
+
+    const cleanup = () => {
+      okBtn.removeEventListener("click", handleOk);
+      cancelBtn.removeEventListener("click", handleCancel);
+      dialog.close();
+    };
+
+    const handleOk = () => { cleanup(); resolve(true); };
+    const handleCancel = () => { cleanup(); resolve(false); };
+
+    okBtn.addEventListener("click", handleOk);
+    cancelBtn.addEventListener("click", handleCancel);
+    
+    dialog.showModal();
+  });
+}
+
+/**
+ * Shows a custom alert dialog (OK button only).
+ * @param {string} message 
+ */
+function showAlert(message) {
+  const dialog = document.getElementById("appDialog");
+  const textEl = document.getElementById("dialogText");
+  const okBtn = document.getElementById("dialogOkBtn");
+  const cancelBtn = document.getElementById("dialogCancelBtn");
+
+  textEl.innerText = message;
+  
+  // --- FIX: Explicitly reset button text to "OK" ---
+  // This prevents it from showing "Merge" or "Overwrite" from previous dialogs
+  okBtn.innerText = t("btnOk") !== "btnOk" ? t("btnOk") : "OK";
+  
+  cancelBtn.style.display = "none"; // Hide cancel for alerts
+
+  const handleOk = () => { 
+    okBtn.removeEventListener("click", handleOk);
+    dialog.close(); 
+  };
+
+  okBtn.addEventListener("click", handleOk);
+  dialog.showModal();
+}
+
 function renderInspector(data) {
   const div = document.getElementById("inspector");
   const color = data.score >= 40 ? "d32f2f" : "2e7d32";
@@ -600,11 +655,60 @@ function renderInspector(data) {
     
     <div style="text-align:right;margin-bottom:10px;"><button id="showDebugBtn" style="font-size:9px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer;padding:3px 8px;border-radius:4px;">${t("viewDebug")}</button></div>
   `;
-  document.getElementById("showDebugBtn").addEventListener("click", () => alert("DEBUG LOG:\n\n"+data.debugLog.join('\n')));
+  document.getElementById("showDebugBtn").addEventListener("click", () => showAlert("DEBUG LOG:\n\n"+data.debugLog.join('\n')));
 }
 
 function renderErrorInspector(user, err) { document.getElementById("inspector").innerHTML = `<div style="color:red;text-align:center;padding-top:60px">❌ ${t("errError")} @${user}<br><span style="font-size:10px">${err||t("errUnknown")}</span></div>`; }
-function renderList(users) { const container = document.getElementById("listContainer"); container.innerHTML = ""; users.forEach(u => { const div = document.createElement("div"); div.className = "row"; div.setAttribute("data-user", u); div.innerHTML = `<input type="checkbox" class="user-check" checked><span class="row-name">@${u}</span><a href="https://www.threads.net/@${u}" target="_blank" class="ext-link">↗</a><span class="tag">Pending</span>`; div.querySelector(".row-name").addEventListener("click", () => { document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`; performAudit(u, div); }); if (auditCache[u]) updateTag(div.querySelector(".tag"), auditCache[u]); container.appendChild(div); }); if (isRiskFilter) applyFilters(); document.querySelectorAll(".user-check").forEach(b => b.addEventListener("change", updateCount)); }
+// --- 3. MODIFIED RENDER LIST: Re-Audit Logic ---
+function renderList(users) { 
+    const container = document.getElementById("listContainer"); 
+    container.innerHTML = ""; 
+    users.forEach(u => { 
+        const div = document.createElement("div"); 
+        div.className = "row"; 
+        div.setAttribute("data-user", u); 
+        
+        // Added cursor pointer to the tag to indicate clickability
+        div.innerHTML = `
+            <input type="checkbox" class="user-check" checked>
+            <span class="row-name">@${u}</span>
+            <a href="https://www.threads.net/@${u}" target="_blank" class="ext-link">↗</a>
+            <span class="tag" style="cursor:pointer;" title="Click to Re-Audit">Pending</span>
+        `; 
+        
+        // Standard Inspector Click
+        div.querySelector(".row-name").addEventListener("click", () => { 
+            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔎 Loading <span class="loading-user">@${u}</span>...</div>`; 
+            performAudit(u, div); 
+        }); 
+
+        // --- NEW: Tag Click to Re-Audit ---
+        const tagBtn = div.querySelector(".tag");
+        tagBtn.addEventListener("click", (e) => {
+            e.stopPropagation(); // Prevent row selection if needed
+            
+            // 1. Clear Cache for this user
+            delete auditCache[u];
+            chrome.storage.local.set({ "audit_db": auditCache });
+            
+            // 2. Visual Feedback
+            tagBtn.innerText = "...";
+            tagBtn.className = "tag loading";
+            
+            // 3. Show loading in inspector
+            document.getElementById("inspector").innerHTML = `<div class="ins-empty">🔄 Re-Auditing <span class="loading-user">@${u}</span>...</div>`;
+            
+            // 4. Run Audit (Pass true to skip cache check if you modify performAudit, but deleting cache above is safer)
+            performAudit(u, div);
+        });
+
+        if (auditCache[u]) updateTag(tagBtn, auditCache[u]); 
+        container.appendChild(div); 
+    }); 
+    
+    if (isRiskFilter) applyFilters(); 
+    document.querySelectorAll(".user-check").forEach(b => b.addEventListener("change", updateCount)); 
+}
 function updateTag(tag, data) { tag.className = data.score >= 40 ? "tag red" : "tag green"; tag.innerText = data.score >= 40 ? `RISK ${data.score}` : "SAFE"; }
 function updateCount() { document.getElementById("countLabel").innerText = `${document.querySelectorAll(".user-check:checked").length} selected`; }
 function showToast(msg) { const t = document.getElementById("toast"); t.innerText = msg; t.className = "show"; setTimeout(() => t.className="", 5000); }

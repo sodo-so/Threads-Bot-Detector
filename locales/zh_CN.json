@@ -81,5 +81,8 @@
   "clearList": "清空列表",
   "errOpenProfile": "请先打开 Threads 个人主页。",
   "errConnect": "连接页面时发生错误。",
-  "importPrompt": "您希望将此文件与当前列表合并吗？\n\n点击 [确定] 合并数据。\n点击 [取消] 清空并覆盖。"
+  "btnMerge": "合并",
+  "btnOverwrite": "覆盖",
+  "importPrompt": "您希望将此文件与当前列表合并吗？",
+  "btnOk": "确定"
 }

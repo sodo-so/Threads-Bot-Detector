@@ -81,5 +81,8 @@
   "clearList": "リストをクリア",
   "errOpenProfile": "先にThreadsのプロフィールを開いてください。",
   "errConnect": "ページへの接続エラー。",
-  "importPrompt": "このファイルを現在のリストとマージ（統合）しますか？\n\n[OK] = マージする\n[キャンセル] = クリアして上書き"
+  "btnMerge": "マージ (統合)",
+  "btnOverwrite": "上書き",
+  "importPrompt": "このファイルを現在のリストとマージしますか？",
+  "btnOk": "OK"
 }
