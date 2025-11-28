@@ -110,5 +110,13 @@
   "batchRemoved": "{count} 人のユーザーを削除しました。",
   "clearCacheTitle": "選択したユーザーの監査結果をクリア",
   "confirmClearSelected": "選択した {count} 人のユーザーの監査キャッシュをクリアしますか？",
-  "cacheClearedBatch": "{count} 人のキャッシュをクリアしました。"
+  "cacheClearedBatch": "{count} 人のキャッシュをクリアしました。",
+  "errAiMsg": "🛑 AI エラー: {msg}",
+  "errAiSkipped": "🛑 AI スキップ (キー欠落)。停止します。",
+  "errAiDisabled": "🛑 Cloud AI が予期せず無効化されました。停止します。",
+  "errPuterFail": "🛑 Puter AI 失敗。停止します。",
+  "errRateLimit": "🛑 レート制限 (429)。停止します。",
+  "errProxyFail": "🛑 プロキシエラー。停止します。",
+  "msgRetrying": "⚠️ AI エラー。60秒後に再試行します...",
+  "errRetryFail": "🛑 再試行に失敗しました。監査を停止します。"
 }

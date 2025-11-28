@@ -110,5 +110,13 @@
   "batchRemoved": "{count} users removed.",
   "clearCacheTitle": "Clear audit results for selected users",
   "confirmClearSelected": "Clear audit cache for {count} selected users?",
-  "cacheClearedBatch": "Cache cleared for {count} users."
+  "cacheClearedBatch": "Cache cleared for {count} users.",
+  "errAiMsg": "🛑 AI Error: {msg}",
+  "errAiSkipped": "🛑 AI Skipped (Missing Key). Stopping.",
+  "errAiDisabled": "🛑 Cloud AI Disabled unexpectedly. Stopping.",
+  "errPuterFail": "🛑 Puter AI Failed. Stopping.",
+  "errRateLimit": "🛑 Rate Limit (429). Stopping.",
+  "errProxyFail": "🛑 Proxy Error. Stopping.",
+  "msgRetrying": "⚠️ AI Error. Retrying in 60s...",
+  "errRetryFail": "🛑 Retry failed. Audit Stopped."
 }

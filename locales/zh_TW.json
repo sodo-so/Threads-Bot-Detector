@@ -110,5 +110,13 @@
   "batchRemoved": "已移除 {count} 位用戶。",
   "clearCacheTitle": "清除已選用戶的審核結果",
   "confirmClearSelected": "確定要清除 {count} 位已選用戶的審核快取嗎？",
-  "cacheClearedBatch": "已清除 {count} 位用戶的快取。"
+  "cacheClearedBatch": "已清除 {count} 位用戶的快取。",
+  "errAiMsg": "🛑 AI 錯誤：{msg}",
+  "errAiSkipped": "🛑 AI 已略過 (缺少金鑰)。停止中。",
+  "errAiDisabled": "🛑 Cloud AI 意外停用。停止中。",
+  "errPuterFail": "🛑 Puter AI 失敗。停止中。",
+  "errRateLimit": "🛑 速率限制 (429)。停止中。",
+  "errProxyFail": "🛑 代理錯誤。停止中。",
+  "msgRetrying": "⚠️ AI 錯誤。60秒後重試...",
+  "errRetryFail": "🛑 重試失敗。審核已停止。"
 }

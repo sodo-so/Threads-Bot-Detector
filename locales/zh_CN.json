@@ -110,5 +110,13 @@
   "batchRemoved": "已移除 {count} 位用户。",
   "clearCacheTitle": "清除选中用户的审核结果",
   "confirmClearSelected": "确定要清除 {count} 位选中用户的审核缓存吗？",
-  "cacheClearedBatch": "已清除 {count} 位用户的缓存。"
+  "cacheClearedBatch": "已清除 {count} 位用户的缓存。",
+  "errAiMsg": "🛑 AI 错误：{msg}",
+  "errAiSkipped": "🛑 AI 已跳过 (缺少密钥)。停止中。",
+  "errAiDisabled": "🛑 Cloud AI 意外禁用。停止中。",
+  "errPuterFail": "🛑 Puter AI 失败。停止中。",
+  "errRateLimit": "🛑 速率限制 (429)。停止中。",
+  "errProxyFail": "🛑 代理错误。停止中。",
+  "msgRetrying": "⚠️ AI 错误。60秒后重试...",
+  "errRetryFail": "🛑 重试失败。审核已停止。"
 }

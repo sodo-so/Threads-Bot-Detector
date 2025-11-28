@@ -772,20 +772,19 @@ if(document.getElementById("auditBtn")) {
     });
 }
 
-// --- CORE AUDIT FUNCTION ---
-async function performAudit(username, rowElement) {
+async function performAudit(username, rowElement, isRetry = false) {
     const tag = rowElement.querySelector(".tag");
     document.querySelectorAll(".row").forEach(r => r.classList.remove("active")); 
     rowElement.classList.add("active");
     
-    // 1. CACHE CHECK (Skip logic if already done)
-    if (auditCache[username]) { 
+    // 1. CACHE CHECK (Skip logic if already done, unless retrying)
+    if (auditCache[username] && !isRetry) { 
         renderInspector(auditCache[username]); 
         updateTag(tag, auditCache[username]); 
         return true; // Continue loop
     }
     
-    tag.innerText = "..."; 
+    tag.innerText = isRetry ? "RETRY..." : "..."; 
     tag.className = "tag loading";
 
     const currentProvider = document.getElementById("aiProviderSelector").value;
@@ -816,12 +815,12 @@ async function performAudit(username, rowElement) {
             username: username, 
             apiKey: isCloud ? geminiKey : null,
             cloudModelId: cloudModelSelector.value, 
-            skipCloudAI: !isCloud, // Important: Tells background to skip its own AI if not Cloud
+            skipCloudAI: !isCloud,
             language: currentLang
         });
 
         if (res && res.success) {
-            // --- STRICT ERROR CHECKING ---
+            // --- STRICT ERROR CHECKING & RETRY LOGIC ---
             
             // A. CLOUD AI SPECIFIC CHECKS
             if (isCloud && res.debugLog) {
@@ -829,17 +828,36 @@ async function performAudit(username, rowElement) {
                 
                 // Check 1: API Errors (Quota/Key)
                 if (logs.includes("AI Error")) {
-                    const errMsg = res.debugLog.find(l => l.includes("AI Error")) || "AI Error";
-                    showToast("🛑 " + errMsg.replace("AI Error:", "AI:"));
+                    const rawMsg = res.debugLog.find(l => l.includes("AI Error")) || "AI Error";
+                    const errMsg = t("errAiMsg").replace("{msg}", rawMsg.replace("AI Error:", "").trim());
+                    
+                    if (!isRetry) {
+                        // --- RETRY LOGIC START ---
+                        showToast(t("msgRetrying"));
+                        tag.innerText = "WAIT 60s"; 
+                        tag.className = "tag"; // Grey tag for waiting
+                        await new Promise(r => setTimeout(r, 60000)); // 60s Pause
+                        return await performAudit(username, rowElement, true); // Retry Once
+                        // --- RETRY LOGIC END ---
+                    }
+
+                    showToast(errMsg);
                     tag.innerText = "AI ERR"; tag.className = "tag red";
-                    renderErrorInspector(username, errMsg);
+                    renderErrorInspector(username, rawMsg);
                     return false; // STOP LOOP
                 }
 
                 // Check 2: Configuration Mismatch (Disabled unexpectedly)
                 if (logs.includes("AI: Disabled")) {
-                    showToast("🛑 Cloud AI Disabled unexpectedly. Stopping.");
+                    showToast(t("errAiDisabled"));
                     tag.innerText = "CFG ERR"; tag.className = "tag red";
+                    return false; // STOP LOOP
+                }
+                
+                // Check 3: Skipped (Key Missing)
+                if (logs.includes("AI: Skipped")) {
+                    showToast(t("errAiSkipped"));
+                    tag.innerText = "NO KEY"; tag.className = "tag red";
                     return false; // STOP LOOP
                 }
             }
@@ -875,19 +893,25 @@ async function performAudit(username, rowElement) {
                 } catch (aiErr) { 
                     console.error("Puter AI Error:", aiErr);
                     
-                    // Mark visually as failed
+                    if (!isRetry) {
+                        // --- RETRY LOGIC START ---
+                        showToast(t("msgRetrying"));
+                        tag.innerText = "WAIT 60s"; 
+                        tag.className = "tag";
+                        await new Promise(r => setTimeout(r, 60000)); 
+                        return await performAudit(username, rowElement, true);
+                        // --- RETRY LOGIC END ---
+                    }
+
                     tag.innerText = "AI FAIL"; 
                     tag.className = "tag red";
                     
-                    // Add failure note to data
                     res.checklist.push({ special: "⚠️ " + t("aiFailedPuter") });
-                    
-                    // Show result so user sees WHICH user failed
                     auditCache[username] = res; 
                     renderInspector(res); 
                     
-                    showToast("🛑 Puter AI Failed. Audit Stopped.");
-                    return false; // CRITICAL: STOP LOOP
+                    showToast(t("errPuterFail"));
+                    return false; // STOP LOOP
                 }
             }
 
@@ -903,12 +927,12 @@ async function performAudit(username, rowElement) {
             const err = res?.error || "Unknown";
             
             if (err.includes("Rate Limit") || err.includes("429")) {
-                showToast("🛑 Rate Limit (429). Audit Stopped.");
+                showToast(t("errRateLimit"));
                 tag.innerText = "429"; tag.className = "tag red";
                 return false; // STOP LOOP
             }
             if (err.includes("Proxy")) {
-                showToast("🛑 Proxy Error. Audit Stopped.");
+                showToast(t("errProxyFail"));
                 tag.innerText = "PROXY"; tag.className = "tag red";
                 return false; // STOP LOOP
             }
@@ -921,8 +945,7 @@ async function performAudit(username, rowElement) {
     } catch (e) { 
         console.error(e);
         tag.innerText = t("statusFail"); tag.className = "tag"; 
-        // Unknown JS error? Safer to continue to next user than crash completely
-        return true; 
+        return true; // Continue on generic JS errors
     }
 }
 

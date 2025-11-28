@@ -110,5 +110,13 @@
   "batchRemoved": "{count}명의 사용자가 삭제되었습니다.",
   "clearCacheTitle": "선택한 사용자의 감사 결과 지우기",
   "confirmClearSelected": "선택한 사용자 {count}명의 감사 캐시를 지우시겠습니까?",
-  "cacheClearedBatch": "{count}명의 캐시가 삭제되었습니다."
+  "cacheClearedBatch": "{count}명의 캐시가 삭제되었습니다.",
+  "errAiMsg": "🛑 AI 오류: {msg}",
+  "errAiSkipped": "🛑 AI 건너뜀 (키 없음). 중지 중.",
+  "errAiDisabled": "🛑 Cloud AI가 비활성화되었습니다. 중지 중.",
+  "errPuterFail": "🛑 Puter AI 실패. 중지 중.",
+  "errRateLimit": "🛑 속도 제한 (429). 중지 중.",
+  "errProxyFail": "🛑 프록시 오류. 중지 중.",
+  "msgRetrying": "⚠️ AI 오류. 60초 후 재시도...",
+  "errRetryFail": "🛑 재시도 실패. 감사가 중지되었습니다."
 }
