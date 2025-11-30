@@ -54,7 +54,8 @@
     .icon-btn { background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 14px; padding: 2px 6px; transition: background 0.2s; } .icon-btn:hover { background: #e0e0e0; }
     #toast { visibility: hidden; min-width: 200px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 10px; position: absolute; z-index: 2000; left: 50%; bottom: 60px; transform: translateX(-50%); font-size: 13px; }
     #toast.show { visibility: visible; }
-    /* Custom Dialog Styles */
+    
+    /* Default Dialog Styles */
     dialog {
       padding: 0;
       border: none;
@@ -65,6 +66,14 @@
       font-family: inherit;
       font-size: 13px;
     }
+    
+    /* --- NEW: RESPONSIVE PROMPT DIALOG --- */
+    #promptDialog {
+        width: calc(100% - 32px); /* Full width with 16px margins on each side */
+        max-width: 480px;         /* Cap the width so it doesn't look ridiculous on large screens */
+        box-sizing: border-box;
+    }
+    
     dialog::backdrop {
       background: rgba(0, 0, 0, 0.4);
       backdrop-filter: blur(2px);
@@ -97,28 +106,9 @@
     .dialog-btn.primary:hover { opacity: 0.8; }
 
     @media (min-width: 401px) { 
-        body { 
-            flex-direction: row; 
-        } 
-        
-        #inspector { 
-            height: 100vh; 
-            /* CHANGE: Use flex-grow to fill remaining space */
-            flex: 1; 
-            width: auto; 
-            min-width: 0; /* Prevents flexbox overflow issues */
-            border-bottom: none; 
-            border-right: 2px solid #ccc; 
-        } 
-        
-        .list-column { 
-            height: 100vh; 
-            /* CHANGE: Set flexible width with a hard cap */
-            width: 40%; 
-            min-width: 280px; /* Ensure it doesn't get unreadably small */
-            max-width: 320px; /* USER REQUEST: Cap width at 360px */
-            flex-shrink: 0;   /* Prevent it from shrinking if space is tight */
-        } 
+        body { flex-direction: row; } 
+        #inspector { flex: 1; width: auto; min-width: 0; border-bottom: none; border-right: 2px solid #ccc; } 
+        .list-column { height: 100vh; width: 40%; min-width: 280px; max-width: 320px; flex-shrink: 0; } 
     }
   </style>
 </head>
@@ -132,6 +122,7 @@
          <option value="zh_CN">简体中文</option>
          <option value="jp">日本語</option> <option value="ko">한국어</option>
        </select>
+       <button id="editPromptBtn" style="border:none; background:none; cursor:pointer; font-size:16px;" title="Edit AI Prompt">📝</button>
        <button id="settingsToggleBtn" style="border:none; background:none; cursor:pointer; font-size:16px;">⚙️</button>
     </div>
 
@@ -268,6 +259,7 @@
     </div>
     <div id="toast"></div>
   </div>
+  
   <dialog id="appDialog">
   <div class="dialog-content" id="dialogText"></div>
   <div class="dialog-actions">
@@ -275,6 +267,25 @@
     <button class="dialog-btn primary" id="dialogOkBtn">OK</button>
   </div>
   </dialog>
+
+  <dialog id="promptDialog">
+    <div style="padding:15px; width:100%; box-sizing: border-box; display: flex; flex-direction: column; height: 100%;">
+      <div style="margin-bottom:10px; font-weight:bold; display:flex; justify-content:space-between; align-items: center;">
+        <span data-i18n="editPromptTitle">Edit AI Audit Prompt</span>
+        <button id="closePromptBtn" style="border:none; background:none; cursor:pointer; font-size:18px;">✕</button>
+      </div>
+      <div style="margin-bottom:10px; font-size:11px; color:#666; background:#fff3e0; padding:8px; border-radius:4px; line-height: 1.4;">
+        <strong data-i18n="promptVariables">Variables:</strong> {username}, {bio}, {mainPost}, {replyHistory}, {lang}<br>
+        <strong data-i18n="promptNoteLabel">Note:</strong> <span data-i18n="promptNoteContent">You MUST ask for JSON output.</span>
+      </div>
+      <textarea id="customPromptInput" style="width:100%; font-family:monospace; font-size:11px; border:1px solid #ccc; border-radius:4px; padding:8px; box-sizing:border-box; resize:vertical; flex-grow: 1; min-height: 200px;"></textarea>
+      <div class="dialog-actions" style="margin-top:10px; padding:0; background:transparent; border:none;">
+        <button class="dialog-btn" id="resetPromptBtn" style="color:#d32f2f;" data-i18n="btnReset">Reset Default</button>
+        <button class="dialog-btn primary" id="savePromptBtn" data-i18n="btnSave">Save Prompt</button>
+      </div>
+    </div>
+  </dialog>
+
   <script src="panel.js"></script>
 </body>
 </html>

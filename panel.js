@@ -12,13 +12,35 @@ let puterLibraryLoaded = false;
 let skippedUsers = new Set();
 let isExtracting = false;
 
-// PROXY SOURCES
+// --- CONSTANTS ---
 const PROXY_SOURCES = [
     "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt",
     "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt",
     "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt",
     "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
 ];
+
+const DEFAULT_PROMPT = `
+Role: Ruthless Bot Hunter.
+Target Profile: @{username}
+Bio: "{bio}"
+Main Post Content: "{mainPost}"
+Reply History: {replyHistory}
+
+INSTRUCTIONS:
+You are auditing "Follower Farms". Assume this user is a BOT until proven otherwise.
+
+SCORING RULES (0 = Human, 100 = Bot):
+- **LACK OF CONTENT IS GUILT**: If 'Main Post' is empty/generic AND 'Bio' is weak/empty -> Score MUST be 90-100.
+- **NO PERSONALITY**: If text is generic ("Life is good", "Happy"), treat it as a script -> Score 80+.
+- **ZERO EFFORT**: No replies + Low content = 100% Bot Probability.
+
+Do not be nice. If the data is thin, flag it as a bot.
+
+Return JSON only: { "bot_probability": number, "reason": "Aggressive explanation in {lang}" }
+`;
+
+let currentCustomPrompt = DEFAULT_PROMPT;
 
 // --- CSS INJECTION (Responsive & Privacy) ---
 const styleSheet = document.createElement("style");
@@ -197,7 +219,7 @@ function toggleUI(show) {
 }
 
 // --- INIT (Async to wait for Lang) ---
-chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode"], async (data) => {
+chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode", "custom_prompt"], async (data) => {
     auditCache = data.audit_db || {};
     
     // 1. Load Language FIRST
@@ -232,6 +254,10 @@ chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model
 
     if (data.enc_api_key) {
         try { geminiKey = atob(data.enc_api_key); } catch (e) {}
+    }
+
+    if (data.custom_prompt) {
+        currentCustomPrompt = data.custom_prompt;
     }
 
     if (typeof puter !== 'undefined') checkPuterLogin();
@@ -345,6 +371,45 @@ if(document.getElementById("privacyCheck")) {
         if (isPrivacy) document.body.classList.add("privacy-mode");
         else document.body.classList.remove("privacy-mode");
         chrome.storage.local.set({ "privacy_mode": isPrivacy });
+    });
+}
+
+// --- PROMPT EDITOR LOGIC ---
+const promptDialog = document.getElementById("promptDialog");
+const promptInput = document.getElementById("customPromptInput");
+
+if(document.getElementById("editPromptBtn")) {
+    document.getElementById("editPromptBtn").addEventListener("click", () => {
+        promptInput.value = currentCustomPrompt;
+        promptDialog.showModal();
+    });
+}
+
+if(document.getElementById("closePromptBtn")) {
+    document.getElementById("closePromptBtn").addEventListener("click", () => promptDialog.close());
+}
+
+if(document.getElementById("savePromptBtn")) {
+    document.getElementById("savePromptBtn").addEventListener("click", () => {
+        const newVal = promptInput.value;
+        // Use t("promptEmpty")
+        if(!newVal.trim()) return showToast(t("promptEmpty") || "Prompt cannot be empty");
+        
+        currentCustomPrompt = newVal;
+        chrome.storage.local.set({ "custom_prompt": currentCustomPrompt });
+        promptDialog.close();
+        
+        // Use t("promptSaved")
+        showToast(t("promptSaved") || "Prompt Saved");
+    });
+}
+
+if(document.getElementById("resetPromptBtn")) {
+    document.getElementById("resetPromptBtn").addEventListener("click", () => {
+        // Use t("confirmReset")
+        if(confirm(t("confirmReset") || "Reset prompt to default?")) {
+            promptInput.value = DEFAULT_PROMPT;
+        }
     });
 }
 
@@ -776,8 +841,13 @@ async function performAudit(username, rowElement, isRetry = false) {
 
     try {
         let res = await chrome.runtime.sendMessage({
-            action: "silent_audit", username: username, apiKey: isCloud ? geminiKey : null,
-            cloudModelId: cloudModelSelector.value, skipCloudAI: !isCloud, language: currentLang
+            action: "silent_audit", 
+            username: username, 
+            apiKey: isCloud ? geminiKey : null,
+            cloudModelId: cloudModelSelector.value, 
+            skipCloudAI: !isCloud, 
+            language: currentLang,
+            customPrompt: isCloud ? currentCustomPrompt : null
         });
 
         if (res && res.success) {
@@ -795,10 +865,17 @@ async function performAudit(username, rowElement, isRetry = false) {
             if (isPuter) {
                 tag.innerText = t("statusAi");
                 const historyText = (res.replyData && res.replyData.history.length > 0) ? res.replyData.history.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n") : "(No replies)";
-                const prompt = `Role: Cybersecurity Auditor. Target: @${username}. Bio: "${res.bioSnippet}". Main Post: "${res.mainPost.text}". Replies: ${historyText}. Detect Bot/Farm. JSON: { "bot_probability": number (0-100), "reason": "Short reason in ${currentLang}" }`;
+                
+                let finalPrompt = currentCustomPrompt
+                    .replace("{username}", username)
+                    .replace("{bio}", res.bioSnippet || "")
+                    .replace("{mainPost}", res.mainPost.text || "")
+                    .replace("{replyHistory}", historyText)
+                    .replace("{lang}", currentLang);
+
                 try {
                     const selectedModel = document.getElementById("puterModelSelector").value;
-                    const aiResp = await puter.ai.chat(prompt, { model: selectedModel });
+                    const aiResp = await puter.ai.chat(finalPrompt, { model: selectedModel });
                     let content = aiResp?.message?.content || "{}"; content = content.replace(/```json|```/g, "").trim();
                     const result = JSON.parse(content);
                     let score = result.bot_probability || 0;

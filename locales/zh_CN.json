@@ -121,5 +121,22 @@
   "errRetryFail": "🛑 重试失败。审核已停止。",
   "markChecked": "标记为已确认 / 安全",
   "statusChecked": "已确认",
-  "userMarked": "用户已标记为确认状态。"
+  "userMarked": "用户已标记为确认状态。",
+  "editPromptTitle": "编辑 AI 审核提示词",
+  "promptVariables": "变量：",
+  "promptImportant": "重要：",
+  "promptJsonReq": "您必须要求 JSON 格式输出。",
+  "resetDefault": "重置为默认值",
+  "savePrompt": "保存提示词",
+  "btnEditPrompt": "编辑 AI 提示词",
+  "errPromptEmpty": "提示词不能为空",
+  "msgPromptSaved": "提示词已保存",
+  "confirmResetPrompt": "确定要重置为默认提示词吗？",
+  "promptNoteLabel": "注意：",
+  "promptNoteContent": "您必须要求 JSON 格式输出。",
+  "btnReset": "重置为默认值",
+  "btnSave": "保存提示词",
+  "promptSaved": "提示词已保存",
+  "promptEmpty": "提示词不能为空",
+  "confirmReset": "是否重置为默认提示词？"
 }

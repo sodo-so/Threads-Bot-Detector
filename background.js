@@ -76,7 +76,15 @@ chrome.action.onClicked.addListener((tab) => { if (tab.url) chrome.sidePanel.ope
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "silent_audit") {
     debugLog = []; 
-    auditProfileSilent(request.username, request.apiKey, request.skipCloudAI, request.cloudModelId, request.language).then(sendResponse);
+    // Pass customPrompt to the audit function
+    auditProfileSilent(
+        request.username, 
+        request.apiKey, 
+        request.skipCloudAI, 
+        request.cloudModelId, 
+        request.language,
+        request.customPrompt
+    ).then(sendResponse);
     return true; 
   }
   if (request.action === "update_proxy") {
@@ -134,7 +142,7 @@ function extractUserRepliesWithContext(htmlString, targetUser) {
 }
 
 // --- 5. CLOUD AI (GEMINI) ---
-async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, apiKey, modelId, lang) {
+async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, apiKey, modelId, lang, customPrompt) {
   try {
     const targetModel = modelId || "gemini-2.5-flash"; 
     log(`AI: Init (${targetModel})`);
@@ -142,26 +150,38 @@ async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, api
     const conversationLog = replyHistory.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n");
     const historyText = conversationLog.length > 0 ? conversationLog : "(No reply history found)";
 
-    // --- AGGRESSIVE PROMPT ---
-    const prompt = `
-    Role: Ruthless Bot Hunter.
-    Target Profile: @${username}
-    Bio: "${bio}"
-    Main Post Content: "${mainPostText}"
-    Reply History: ${historyText}
+    let prompt = "";
 
-    INSTRUCTIONS:
-    You are auditing "Follower Farms". Assume this user is a BOT until proven otherwise.
-    
-    SCORING RULES (0 = Human, 100 = Bot):
-    - **LACK OF CONTENT IS GUILT**: If 'Main Post' is empty/generic AND 'Bio' is weak/empty -> Score MUST be 90-100.
-    - **NO PERSONALITY**: If text is generic ("Life is good", "Happy"), treat it as a script -> Score 80+.
-    - **ZERO EFFORT**: No replies + Low content = 100% Bot Probability.
-    
-    Do not be nice. If the data is thin, flag it as a bot.
+    if (customPrompt) {
+        // Use custom prompt and replace variables
+        prompt = customPrompt
+            .replace("{username}", username)
+            .replace("{bio}", bio)
+            .replace("{mainPost}", mainPostText)
+            .replace("{replyHistory}", historyText)
+            .replace("{lang}", lang || 'English');
+    } else {
+        // Fallback to hardcoded default if custom prompt is missing
+        prompt = `
+        Role: Ruthless Bot Hunter.
+        Target Profile: @${username}
+        Bio: "${bio}"
+        Main Post Content: "${mainPostText}"
+        Reply History: ${historyText}
 
-    Return JSON only: { "bot_probability": number, "reason": "Aggressive explanation in ${lang || 'English'}" }
-    `;
+        INSTRUCTIONS:
+        You are auditing "Follower Farms". Assume this user is a BOT until proven otherwise.
+        
+        SCORING RULES (0 = Human, 100 = Bot):
+        - **LACK OF CONTENT IS GUILT**: If 'Main Post' is empty/generic AND 'Bio' is weak/empty -> Score MUST be 90-100.
+        - **NO PERSONALITY**: If text is generic ("Life is good", "Happy"), treat it as a script -> Score 80+.
+        - **ZERO EFFORT**: No replies + Low content = 100% Bot Probability.
+        
+        Do not be nice. If the data is thin, flag it as a bot.
+
+        Return JSON only: { "bot_probability": number, "reason": "Aggressive explanation in ${lang || 'English'}" }
+        `;
+    }
     
     log("AI: Sending... (Direct Connection)");
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
@@ -184,7 +204,7 @@ async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, api
 }
 
 // --- 6. MAIN AUDIT ---
-async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, lang) {
+async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, lang, customPrompt) {
   try {
     const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'text/html' };
     
@@ -237,7 +257,7 @@ async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, l
         log("AI: Skipped (No Key)");
     } else {
         if (replyData.history.length === 0) log("AI: Running (No Replies - Bio/Post Only)");
-        aiResult = await analyzeWithCloudAI(username, bioText, mainPost.text, replyData.history, apiKey, cloudModelId, lang);
+        aiResult = await analyzeWithCloudAI(username, bioText, mainPost.text, replyData.history, apiKey, cloudModelId, lang, customPrompt);
     }
 
     let latestDate = mainPost.date || replyData.date;

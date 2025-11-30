@@ -121,5 +121,22 @@
   "errRetryFail": "🛑 重試失敗。審核已停止。",
   "markChecked": "標記為已確認 / 安全",
   "statusChecked": "已確認",
-  "userMarked": "用戶已標記為確認狀態。"
+  "userMarked": "用戶已標記為確認狀態。",
+  "editPromptTitle": "編輯 AI 審核提示詞",
+  "promptVariables": "變數：",
+  "promptImportant": "重要：",
+  "promptJsonReq": "您必須要求 JSON 格式輸出。",
+  "resetDefault": "重置為預設值",
+  "savePrompt": "儲存提示詞",
+  "btnEditPrompt": "編輯 AI 提示詞",
+  "errPromptEmpty": "提示詞不能為空",
+  "msgPromptSaved": "提示詞已儲存",
+  "confirmResetPrompt": "確定要重置為預設提示詞嗎？",
+  "promptNoteLabel": "注意：",
+  "promptNoteContent": "您必須要求 JSON 格式輸出。",
+  "btnReset": "重置為預設值",
+  "btnSave": "儲存提示詞",
+  "promptSaved": "提示詞已儲存",
+  "promptEmpty": "提示詞不能為空",
+  "confirmReset": "是否重置為預設提示詞？"
 }

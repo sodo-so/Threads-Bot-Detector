@@ -121,5 +121,22 @@
   "errRetryFail": "🛑 再試行に失敗しました。監査を停止します。",
   "markChecked": "確認済み / 安全としてマーク",
   "statusChecked": "確認済",
-  "userMarked": "ユーザーを確認済みとしてマークしました。"
+  "userMarked": "ユーザーを確認済みとしてマークしました。",
+  "editPromptTitle": "AI監査プロンプトを編集",
+  "promptVariables": "変数:",
+  "promptImportant": "重要:",
+  "promptJsonReq": "JSON形式での出力を要求する必要があります。",
+  "resetDefault": "デフォルトに戻す",
+  "savePrompt": "プロンプトを保存",
+  "btnEditPrompt": "AIプロンプトを編集",
+  "errPromptEmpty": "プロンプトは空にできません",
+  "msgPromptSaved": "プロンプトを保存しました",
+  "confirmResetPrompt": "プロンプトをデフォルトに戻しますか？",
+  "promptNoteLabel": "注意：",
+  "promptNoteContent": "必ずJSON形式での出力を要求してください。",
+  "btnReset": "デフォルトに戻す",
+  "btnSave": "プロンプトを保存",
+  "promptSaved": "プロンプトを保存しました",
+  "promptEmpty": "プロンプトは空にできません",
+  "confirmReset": "デフォルトのプロンプトに戻しますか？"
 }

@@ -121,5 +121,22 @@
   "errRetryFail": "🛑 재시도 실패. 감사가 중지되었습니다.",
   "markChecked": "확인됨 / 안전으로 표시",
   "statusChecked": "확인됨",
-  "userMarked": "사용자가 확인됨으로 표시되었습니다."
+  "userMarked": "사용자가 확인됨으로 표시되었습니다.",
+  "editPromptTitle": "AI 감사 프롬프트 편집",
+  "promptVariables": "변수:",
+  "promptImportant": "중요:",
+  "promptJsonReq": "JSON 출력을 요청해야 합니다.",
+  "resetDefault": "기본값으로 재설정",
+  "savePrompt": "프롬프트 저장",
+  "btnEditPrompt": "AI 프롬프트 편집",
+  "errPromptEmpty": "프롬프트는 비어 있을 수 없습니다",
+  "msgPromptSaved": "프롬프트가 저장되었습니다",
+  "confirmResetPrompt": "프롬프트를 기본값으로 재설정하시겠습니까?",
+  "promptNoteLabel": "주의:",
+  "promptNoteContent": "반드시 JSON 형식 출력을 요청해야 합니다.",
+  "btnReset": "기본값으로 초기화",
+  "btnSave": "프롬프트 저장",
+  "promptSaved": "프롬프트가 저장되었습니다",
+  "promptEmpty": "프롬프트는 비어 있을 수 없습니다",
+  "confirmReset": "기본 프롬프트로 초기화하시겠습니까?"
 }
