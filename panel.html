@@ -6,6 +6,8 @@
   <script src="puter.js"></script> 
   <style>
     /* ... (Keep existing CSS) ... */
+    /* ... (Same as previous version) ... */
+    
     body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff; height: 100vh; width: 100vw; display: flex; flex-direction: column; overflow: hidden; }
     body.privacy-mode .ins-img, body.privacy-mode .loading-user, body.privacy-mode .row-name, body.privacy-mode .ins-header div, body.privacy-mode .ins-bio, body.privacy-mode .ins-post-main > div:last-child, body.privacy-mode .reply-card, body.privacy-mode .search-input { filter: blur(2.5px); user-select: none; }
     #inspector { height: 45vh; width: 100%; flex-shrink: 0; background: #f9f9f9; border-bottom: 2px solid #ccc; padding: 15px; box-sizing: border-box; overflow-y: auto; display: block; font-size: 14px; }
@@ -55,7 +57,6 @@
     #toast { visibility: hidden; min-width: 200px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 10px; position: absolute; z-index: 2000; left: 50%; bottom: 60px; transform: translateX(-50%); font-size: 13px; }
     #toast.show { visibility: visible; }
     
-    /* Default Dialog Styles */
     dialog {
       padding: 0;
       border: none;
@@ -67,10 +68,9 @@
       font-size: 13px;
     }
     
-    /* --- NEW: RESPONSIVE PROMPT DIALOG --- */
     #promptDialog {
-        width: calc(100% - 32px); /* Full width with 16px margins on each side */
-        max-width: 480px;         /* Cap the width so it doesn't look ridiculous on large screens */
+        width: calc(100% - 32px); 
+        max-width: 480px;         
         box-sizing: border-box;
     }
     
@@ -201,8 +201,10 @@
       <select id="aiProviderSelector">
         <option value="disabled" data-i18n="aiDisabled">Disabled (Fastest)</option>
         <option value="cloud" data-i18n="aiCloud">Google Gemini API (Cloud)</option>
-        <option value="puter">Puter.js (Free / No Key)</option>
+        <option value="cloudflare">Cloudflare Workers AI</option>
+        <option value="ollama">Ollama (Local)</option> <option value="puter">Puter.js (Free / No Key)</option>
       </select>
+      
       <div id="cloudControls" class="ai-controls" style="display:none;">
         <div style="border-bottom:1px solid #dce775; padding-bottom:6px; margin-bottom:2px; display:flex; gap:5px; align-items:end;">
            <div style="flex-grow:1;">
@@ -222,6 +224,50 @@
         </div>
         <div id="aiRemoveArea" style="display:none;">
           <button id="removeKeyBtn" class="remove-key-btn" data-i18n="removeKey">Remove Saved Key</button>
+        </div>
+      </div>
+      
+      <div id="cfControls" class="ai-controls" style="display:none;">
+        <div style="border-bottom:1px solid #dce775; padding-bottom:6px; margin-bottom:6px;">
+           <label style="font-size:10px; color:#666; font-weight:bold; display:block; margin-bottom:2px;" data-i18n="modelVersion">MODEL VERSION:</label>
+           <select id="cfModelSelector">
+             <option value="@cf/meta/llama-3.1-8b-instruct" selected>Llama 3.1 8B Instruct</option>
+             <option value="@cf/meta/llama-3-8b-instruct">Llama 3 8B Instruct</option>
+             <option value="@cf/meta/llama-3.1-70b-instruct">Llama 3.1 70B (Beta)</option>
+             <option value="@cf/google/gemma-7b-it-lora">Gemma 7B LoRA</option>
+             <option value="@cf/mistral/mistral-7b-instruct-v0.1">Mistral 7B Instruct</option>
+           </select>
+        </div>
+        <input type="text" id="cfAccountIdInput" class="api-input" placeholder="Cloudflare Account ID" style="margin-bottom:5px;">
+        <input type="password" id="cfApiTokenInput" class="api-input" placeholder="Cloudflare API Token">
+        <button id="saveCfBtn" class="btn" style="margin:5px 0 0; padding:5px; font-size:11px; background:#333;" data-i18n="saveKey">Save Credentials</button>
+        <div id="cfRemoveArea" style="display:none; margin-top:5px;">
+          <span class="status-saved" style="font-size:10px;">(Credentials Saved)</span>
+          <button id="removeCfBtn" class="remove-key-btn" style="float:right;" data-i18n="removeKey">Remove</button>
+        </div>
+      </div>
+
+      <div id="ollamaControls" class="ai-controls" style="display:none;">
+        <div style="margin-bottom:5px;">
+          <label style="font-size:10px; font-weight:bold; color:#666;" data-i18n="apiUrl">API URL:</label>
+          <input type="text" id="ollamaUrlInput" class="api-input" value="http://localhost:11434" placeholder="http://localhost:11434">
+        </div>
+        <div style="margin-bottom:5px;">
+          <label style="font-size:10px; font-weight:bold; color:#666;" data-i18n="modelVersion">MODEL:</label>
+          <div style="display:flex; gap:5px; align-items: center;">
+              <select id="ollamaModelSelect" class="api-input" style="flex-grow:1; background:#fff;">
+                  <option value="llama3">llama3 (Default)</option>
+              </select>
+              
+              <button id="fetchOllamaModelsBtn" style="border:1px solid #ccc; background:#fff; cursor:pointer; padding:4px 8px; border-radius:4px; flex-shrink:0;" title="Fetch Local Models">🔄</button>
+          </div>
+          <div id="ollamaFetchStatus" style="font-size:9px; color:#666; margin-top:2px; height:12px;"></div>
+        </div>
+        
+        <button id="saveOllamaBtn" class="btn" style="margin:5px 0 0; padding:5px; font-size:11px; background:#333;" data-i18n="btnSaveConfig">Save Config</button>
+        
+        <div id="ollamaStatusArea" style="display:none; margin-top:5px;">
+            <span class="status-saved" style="font-size:10px;" data-i18n="configSaved">(Config Saved)</span>
         </div>
       </div>
       

@@ -1,6 +1,8 @@
 let extractedUsers = [];
 let auditCache = {};
 let geminiKey = null;
+let cfCreds = null; // Cloudflare Credentials
+let ollamaConfig = null; // Ollama URL & Model
 let aiProvider = "disabled";
 let currentLang = "en";
 let translations = {};
@@ -94,6 +96,10 @@ styleSheet.innerText = `
       flex: 0 0 auto;
       margin-left: auto;
   }
+  
+  /* Loading Spinner for Fetch Button */
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
 `;
 document.head.appendChild(styleSheet);
 
@@ -114,19 +120,16 @@ function t(key) {
 }
 
 function updateUILanguage() {
-    // 1. Text Content
     document.querySelectorAll("[data-i18n]").forEach(el => {
         const key = el.getAttribute("data-i18n");
         if (translations[key]) el.innerText = translations[key];
     });
 
-    // 2. Placeholders
     document.querySelectorAll("[data-i18n-ph]").forEach(el => {
         const key = el.getAttribute("data-i18n-ph");
         if (translations[key]) el.placeholder = translations[key];
     });
 
-    // 3. Dynamic Elements
     if (document.getElementById("universalInput")) {
         document.getElementById("universalInput").placeholder = t("universalPh");
     }
@@ -148,7 +151,6 @@ function updateUILanguage() {
     const batchRemoveBtn = document.getElementById("batchRemoveBtn");
     if (batchRemoveBtn) batchRemoveBtn.title = t("batchRemoveTitle");
 
-    // 4. Live Refresh of Tags
     if (typeof renderList === "function" && extractedUsers.length > 0) {
         renderList(extractedUsers);
     }
@@ -218,11 +220,10 @@ function toggleUI(show) {
     if(document.getElementById("statsRow")) document.getElementById("statsRow").style.display = flexDisplay;
 }
 
-// --- INIT (Async to wait for Lang) ---
-chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode", "custom_prompt"], async (data) => {
+// --- INIT ---
+chrome.storage.local.get(["audit_db", "enc_api_key", "cf_creds", "ollama_config", "ai_provider", "cloud_model_id", "cf_model_id", "puter_model_id", "saved_users", "skipped_users", "ui_lang", "proxy_config", "privacy_mode", "custom_prompt"], async (data) => {
     auditCache = data.audit_db || {};
     
-    // 1. Load Language FIRST
     if (data.ui_lang) {
         currentLang = data.ui_lang;
         const ls = document.getElementById("langSelector");
@@ -230,21 +231,17 @@ chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model
     }
     await loadLanguage(currentLang);
 
-    if (data.skipped_users) {
-        skippedUsers = new Set(data.skipped_users);
-    }
+    if (data.skipped_users) skippedUsers = new Set(data.skipped_users);
 
-    // 2. Render List AFTER Lang
     if (data.saved_users && Array.isArray(data.saved_users)) {
         extractedUsers = data.saved_users;
         renderList(extractedUsers);
-        if (extractedUsers.length > 0) {
-            toggleUI(true);
-            updateCount();
-        }
+        if (extractedUsers.length > 0) { toggleUI(true); updateCount(); }
     }
+    
     if (data.cloud_model_id && document.getElementById("cloudModelSelector")) document.getElementById("cloudModelSelector").value = data.cloud_model_id;
     if (data.puter_model_id && document.getElementById("puterModelSelector")) document.getElementById("puterModelSelector").value = data.puter_model_id;
+    if (data.cf_model_id && document.getElementById("cfModelSelector")) document.getElementById("cfModelSelector").value = data.cf_model_id;
 
     if (data.ai_provider) {
         aiProvider = (data.ai_provider === "chrome") ? "disabled" : data.ai_provider;
@@ -252,13 +249,28 @@ chrome.storage.local.get(["audit_db", "enc_api_key", "ai_provider", "cloud_model
         if (aiProvider === "puter") ensurePuterLoaded();
     }
 
-    if (data.enc_api_key) {
-        try { geminiKey = atob(data.enc_api_key); } catch (e) {}
+    if (data.enc_api_key) { try { geminiKey = atob(data.enc_api_key); } catch (e) {} }
+    if (data.cf_creds) { cfCreds = data.cf_creds; }
+    
+    if (data.ollama_config) { 
+        ollamaConfig = data.ollama_config;
+        if(document.getElementById("ollamaUrlInput")) {
+            document.getElementById("ollamaUrlInput").value = ollamaConfig.url || "http://localhost:11434";
+        }
+        if(document.getElementById("ollamaModelSelect")) {
+            // Restore saved model to the select list so it isn't empty
+            const savedModel = ollamaConfig.model || "llama3";
+            const select = document.getElementById("ollamaModelSelect");
+            select.innerHTML = ""; 
+            const opt = document.createElement("option");
+            opt.value = savedModel;
+            opt.innerText = savedModel;
+            select.appendChild(opt);
+            select.value = savedModel;
+        }
     }
 
-    if (data.custom_prompt) {
-        currentCustomPrompt = data.custom_prompt;
-    }
+    if (data.custom_prompt) { currentCustomPrompt = data.custom_prompt; }
 
     if (typeof puter !== 'undefined') checkPuterLogin();
     updateAIUI();
@@ -295,10 +307,7 @@ function ensurePuterLoaded() {
             populatePuterModels();
             resolve();
         };
-        script.onerror = () => {
-            showToast(t("puterLoadFail"));
-            reject(new Error("Script load error"));
-        };
+        script.onerror = () => { showToast(t("puterLoadFail")); reject(new Error("Script load error")); };
         document.head.appendChild(script);
     });
 }
@@ -392,21 +401,16 @@ if(document.getElementById("closePromptBtn")) {
 if(document.getElementById("savePromptBtn")) {
     document.getElementById("savePromptBtn").addEventListener("click", () => {
         const newVal = promptInput.value;
-        // Use t("promptEmpty")
         if(!newVal.trim()) return showToast(t("promptEmpty") || "Prompt cannot be empty");
-        
         currentCustomPrompt = newVal;
         chrome.storage.local.set({ "custom_prompt": currentCustomPrompt });
         promptDialog.close();
-        
-        // Use t("promptSaved")
         showToast(t("promptSaved") || "Prompt Saved");
     });
 }
 
 if(document.getElementById("resetPromptBtn")) {
     document.getElementById("resetPromptBtn").addEventListener("click", () => {
-        // Use t("confirmReset")
         if(confirm(t("confirmReset") || "Reset prompt to default?")) {
             promptInput.value = DEFAULT_PROMPT;
         }
@@ -566,7 +570,6 @@ if(document.getElementById("importFileInput")) {
                 updateCount();
                 toggleUI(true);
 
-                // REFRESH INSPECTOR IF OPEN
                 const currentNameEl = document.querySelector(".ins-header .ins-user-wrapper div:last-child");
                 if (currentNameEl) {
                     const currentUsername = currentNameEl.innerText.replace("@", "").replace(" ↗", "").trim();
@@ -622,9 +625,113 @@ if(puterModelSelector) {
     puterModelSelector.addEventListener("change", (e) => chrome.storage.local.set({ "puter_model_id": e.target.value }));
 }
 
+// Cloudflare UI Handling
+if(document.getElementById("cfModelSelector")) {
+    document.getElementById("cfModelSelector").addEventListener("change", (e) => chrome.storage.local.set({ "cf_model_id": e.target.value }));
+}
+
+if(document.getElementById("saveCfBtn")) {
+    document.getElementById("saveCfBtn").addEventListener("click", () => {
+        const accId = document.getElementById("cfAccountIdInput").value.trim();
+        const token = document.getElementById("cfApiTokenInput").value.trim();
+        if (!accId || !token) return showToast("Enter ID and Token");
+        
+        const creds = { accountId: accId, apiToken: token };
+        chrome.storage.local.set({ "cf_creds": creds }, () => {
+            cfCreds = creds;
+            document.getElementById("cfAccountIdInput").value = "";
+            document.getElementById("cfApiTokenInput").value = "";
+            updateAIUI();
+            showToast("Credentials Saved");
+        });
+    });
+}
+
+if(document.getElementById("removeCfBtn")) {
+    document.getElementById("removeCfBtn").addEventListener("click", () => {
+        chrome.storage.local.remove("cf_creds", () => {
+            cfCreds = null;
+            updateAIUI();
+            showToast("Credentials Removed");
+        });
+    });
+}
+
+// Ollama UI Handling (Fetch & Save)
+if(document.getElementById("saveOllamaBtn")) {
+    document.getElementById("saveOllamaBtn").addEventListener("click", () => {
+        const url = document.getElementById("ollamaUrlInput").value.trim() || "http://localhost:11434";
+        const model = document.getElementById("ollamaModelSelect").value.trim() || "llama3";
+        const config = { url, model };
+        
+        chrome.storage.local.set({ "ollama_config": config }, () => {
+            ollamaConfig = config;
+            updateAIUI();
+            showToast(t("configSaved") || "Config Saved");
+        });
+    });
+}
+
+if(document.getElementById("fetchOllamaModelsBtn")) {
+    document.getElementById("fetchOllamaModelsBtn").addEventListener("click", () => {
+        const url = document.getElementById("ollamaUrlInput").value.trim() || "http://localhost:11434";
+        const btn = document.getElementById("fetchOllamaModelsBtn");
+        const statusLabel = document.getElementById("ollamaFetchStatus"); // Can be kept for cleaning old text if needed
+        const select = document.getElementById("ollamaModelSelect");
+        
+        btn.disabled = true; 
+        btn.style.opacity = 0.5;
+        btn.classList.add("spin");
+        
+        showToast(t("fetching") || "Fetching...");
+        if(statusLabel) statusLabel.innerText = ""; // Clear any old static text
+        
+        chrome.runtime.sendMessage({ action: "fetch_ollama_models", url: url }, (response) => {
+            btn.disabled = false; 
+            btn.style.opacity = 1;
+            btn.classList.remove("spin");
+
+            if (chrome.runtime.lastError || !response || !response.success) {
+                console.error(chrome.runtime.lastError || response?.error);
+                showToast(t("ollamaConnectionErr") || "Connection failed.");
+                return;
+            }
+
+            const models = response.models;
+            
+            if(models.length > 0) {
+                const currentVal = select.value;
+                select.innerHTML = "";
+                
+                models.forEach(m => {
+                    const opt = document.createElement("option");
+                    opt.value = m.name;
+                    opt.innerText = m.name;
+                    select.appendChild(opt);
+                });
+
+                if (models.some(m => m.name === currentVal)) {
+                    select.value = currentVal;
+                } else {
+                    select.value = models[0].name;
+                }
+
+                showToast(t("ollamaModelsFound") || "Models updated.");
+            } else {
+                showToast(t("ollamaNoModels") || "No models found.");
+            }
+        });
+    });
+}
+
 function updateAIUI() {
     if(cloudControls) cloudControls.style.display = "none"; 
-    if(puterControls) puterControls.style.display = "none"; 
+    if(puterControls) puterControls.style.display = "none";
+    const cfControls = document.getElementById("cfControls");
+    if(cfControls) cfControls.style.display = "none";
+    const ollamaControls = document.getElementById("ollamaControls");
+    if(ollamaControls) ollamaControls.style.display = "none";
+    
     if(keyStatus) { keyStatus.innerText = ""; keyStatus.className = ""; }
     
     if (aiProvider === "cloud") {
@@ -637,6 +744,33 @@ function updateAIUI() {
             if(keyStatus) { keyStatus.innerText = "(No Key)"; keyStatus.className = "status-missing"; }
             if(aiInputArea) aiInputArea.style.display = "block"; 
             if(aiRemoveArea) aiRemoveArea.style.display = "none"; 
+        }
+    } else if (aiProvider === "cloudflare") {
+        if(cfControls) cfControls.style.display = "flex";
+        const removeArea = document.getElementById("cfRemoveArea");
+        const inputs = [document.getElementById("cfAccountIdInput"), document.getElementById("cfApiTokenInput")];
+        const saveBtn = document.getElementById("saveCfBtn");
+
+        if (cfCreds && cfCreds.accountId && cfCreds.apiToken) {
+            if(keyStatus) { keyStatus.innerText = "(Ready)"; keyStatus.className = "status-saved"; }
+            if(removeArea) removeArea.style.display = "block";
+            inputs.forEach(i => i.style.display = "none");
+            saveBtn.style.display = "none";
+        } else {
+            if(keyStatus) { keyStatus.innerText = "(No Key)"; keyStatus.className = "status-missing"; }
+            if(removeArea) removeArea.style.display = "none";
+            inputs.forEach(i => i.style.display = "block");
+            saveBtn.style.display = "block";
+        }
+    } else if (aiProvider === "ollama") {
+        if(ollamaControls) ollamaControls.style.display = "block";
+        const statusArea = document.getElementById("ollamaStatusArea");
+        if(ollamaConfig) {
+            if(keyStatus) { keyStatus.innerText = "(Configured)"; keyStatus.className = "status-saved"; }
+            if(statusArea) statusArea.style.display = "block";
+        } else {
+            if(keyStatus) { keyStatus.innerText = "(Setup Req)"; keyStatus.className = "status-missing"; }
+            if(statusArea) statusArea.style.display = "none";
         }
     } else if (aiProvider === "puter") {
         if(puterControls) puterControls.style.display = "block";
@@ -829,11 +963,14 @@ async function performAudit(username, rowElement, isRetry = false) {
     tag.innerText = isRetry ? "RETRY..." : "..."; 
     tag.className = "tag loading";
 
-    const currentProvider = document.getElementById("aiProviderSelector").value;
-    const isCloud = (currentProvider === "cloud");
-    const isPuter = (currentProvider === "puter");
+    const isCloud = (aiProvider === "cloud");
+    const isCf = (aiProvider === "cloudflare");
+    const isOllama = (aiProvider === "ollama");
+    const isPuter = (aiProvider === "puter");
 
     if (isCloud && !geminiKey) { showToast(t("enterKey")); return false; }
+    if (isCf && (!cfCreds || !cfCreds.accountId)) { showToast("Missing Cloudflare Credentials"); return false; }
+    if (isOllama && !ollamaConfig) { showToast("Configure Ollama first"); return false; }
     if (isPuter && !puterSignedIn) {
         try { await puter.auth.signIn(); puterSignedIn = true; updateAIUI(); }
         catch (e) { tag.innerText = t("statusAuth"); tag.className = "tag"; showToast(t("puterSignInReq")); return false; }
@@ -844,22 +981,43 @@ async function performAudit(username, rowElement, isRetry = false) {
             action: "silent_audit", 
             username: username, 
             apiKey: isCloud ? geminiKey : null,
+            
+            // Cloudflare Data
+            cfCreds: isCf ? cfCreds : null,
+            cfModel: isCf ? document.getElementById("cfModelSelector").value : null,
+            
+            // Ollama Data
+            ollamaConfig: isOllama ? ollamaConfig : null,
+
             cloudModelId: cloudModelSelector.value, 
-            skipCloudAI: !isCloud, 
+            skipCloudAI: (!isCloud && !isCf && !isOllama), 
+            provider: aiProvider,
             language: currentLang,
-            customPrompt: isCloud ? currentCustomPrompt : null
+            customPrompt: (isCloud || isCf || isOllama) ? currentCustomPrompt : null
         });
 
         if (res && res.success) {
-            if (isCloud && res.debugLog) {
+            if ((isCloud || isCf || isOllama) && res.debugLog) {
                 const logs = res.debugLog.join(" ");
-                if (logs.includes("AI Error")) {
-                    if (!isRetry) { showToast(t("msgRetrying")); tag.innerText = "WAIT 60s"; tag.className = "tag"; await new Promise(r => setTimeout(r, 60000)); return await performAudit(username, rowElement, true); }
-                    const msg = res.debugLog.find(l => l.includes("AI Error")) || "AI Error";
-                    showToast(t("errAiMsg").replace("{msg}", msg)); tag.innerText = "AI ERR"; tag.className = "tag red"; renderErrorInspector(username, msg); return false;
+                if (logs.includes("AI Error") || logs.includes("CF AI Error") || logs.includes("Ollama Error")) {
+                    
+                    const msg = res.debugLog.find(l => l.includes("Error")) || "AI Error";
+
+                    if (!isRetry) { 
+                        showToast(`${msg}. ${t("msgRetrying") || "Retrying..."}`); 
+                        tag.innerText = "WAIT 60s"; 
+                        tag.className = "tag"; 
+                        renderErrorInspector(username, `${msg}. Retrying in 60s...`);
+                        await new Promise(r => setTimeout(r, 60000)); 
+                        return await performAudit(username, rowElement, true); 
+                    }
+                    
+                    showToast(t("errAiMsg").replace("{msg}", msg)); 
+                    tag.innerText = "AI ERR"; 
+                    tag.className = "tag red"; 
+                    renderErrorInspector(username, msg); 
+                    return false;
                 }
-                if (logs.includes("AI: Disabled")) { showToast(t("errAiDisabled")); tag.innerText = "CFG ERR"; tag.className = "tag red"; return false; }
-                if (logs.includes("AI: Skipped")) { showToast(t("errAiSkipped")); tag.innerText = "NO KEY"; tag.className = "tag red"; return false; }
             }
 
             if (isPuter) {

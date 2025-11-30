@@ -76,20 +76,33 @@ chrome.action.onClicked.addListener((tab) => { if (tab.url) chrome.sidePanel.ope
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "silent_audit") {
     debugLog = []; 
-    // Pass customPrompt to the audit function
     auditProfileSilent(
         request.username, 
         request.apiKey, 
         request.skipCloudAI, 
         request.cloudModelId, 
         request.language,
-        request.customPrompt
+        request.customPrompt,
+        request.cfCreds,
+        request.cfModel,
+        request.provider,
+        request.ollamaConfig // NEW
     ).then(sendResponse);
     return true; 
   }
   if (request.action === "update_proxy") {
       applyProxySettings(request.config);
       return false;
+  }
+  if (request.action === "fetch_ollama_models") {
+    fetch(`${request.url}/api/tags`)
+        .then(res => {
+            if (!res.ok) throw new Error("Ollama connection failed");
+            return res.json();
+        })
+        .then(data => sendResponse({ success: true, models: data.models || [] }))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+    return true; // Keep the message channel open for async response
   }
 });
 
@@ -153,7 +166,6 @@ async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, api
     let prompt = "";
 
     if (customPrompt) {
-        // Use custom prompt and replace variables
         prompt = customPrompt
             .replace("{username}", username)
             .replace("{bio}", bio)
@@ -161,7 +173,6 @@ async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, api
             .replace("{replyHistory}", historyText)
             .replace("{lang}", lang || 'English');
     } else {
-        // Fallback to hardcoded default if custom prompt is missing
         prompt = `
         Role: Ruthless Bot Hunter.
         Target Profile: @${username}
@@ -200,6 +211,123 @@ async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, api
   } catch (e) { 
     log(`AI Error: ${e.message}`); 
     return { score: 0, reason: "AI Failed", skipped: true }; 
+  }
+}
+
+// --- 5b. CLOUDFLARE AI ---
+async function analyzeWithCloudflare(username, bio, mainPostText, replyHistory, creds, modelId, lang, customPrompt) {
+  try {
+    const targetModel = modelId || "@cf/meta/llama-3-8b-instruct"; 
+    log(`AI: Init Cloudflare (${targetModel})`);
+    
+    const conversationLog = replyHistory.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n");
+    const historyText = conversationLog.length > 0 ? conversationLog : "(No reply history found)";
+
+    let promptText = "";
+    if (customPrompt) {
+        promptText = customPrompt
+            .replace("{username}", username)
+            .replace("{bio}", bio)
+            .replace("{mainPost}", mainPostText)
+            .replace("{replyHistory}", historyText)
+            .replace("{lang}", lang || 'English');
+    } else {
+        promptText = `Role: Ruthless Bot Hunter. Target: @${username}. Bio: "${bio}". Post: "${mainPostText}". Replies: ${historyText}. Audit for bot/farm. Return JSON: { "bot_probability": number, "reason": "reason in ${lang}" }`;
+    }
+
+    log("AI: Sending to Cloudflare...");
+    const url = `https://api.cloudflare.com/client/v4/accounts/${creds.accountId}/ai/run/${targetModel}`;
+    
+    const response = await fetch(url, { 
+        method: "POST", 
+        headers: { 
+            "Authorization": `Bearer ${creds.apiToken}`,
+            "Content-Type": "application/json"
+        }, 
+        body: JSON.stringify({ 
+            messages: [
+                { role: "system", content: "You are a JSON-only bot detection API. Output STRICT JSON. No markdown." },
+                { role: "user", content: promptText }
+            ] 
+        }) 
+    });
+
+    const data = await response.json();
+    
+    if(!data.success) {
+        const err = data.errors && data.errors.length > 0 ? data.errors[0].message : "Unknown CF Error";
+        throw new Error(err);
+    }
+    
+    let rawText = data.result.response;
+    rawText = rawText.replace(/```json|```/g, "").trim();
+    
+    const result = JSON.parse(rawText);
+    const scoreVal = (typeof result.bot_probability === 'number') ? result.bot_probability : 0;
+    
+    log(`AI: Result ${scoreVal}% - ${result.reason}`);
+    return { score: scoreVal, reason: result.reason, skipped: false };
+
+  } catch (e) { 
+    log(`CF AI Error: ${e.message}`); 
+    return { score: 0, reason: "CF AI Failed", skipped: true }; 
+  }
+}
+
+// --- 5c. OLLAMA AI (LOCAL) ---
+async function analyzeWithOllama(username, bio, mainPostText, replyHistory, config, lang, customPrompt) {
+  try {
+    const url = config.url || "http://localhost:11434";
+    const model = config.model || "llama3";
+    log(`AI: Init Ollama (${model} @ ${url})`);
+    
+    const conversationLog = replyHistory.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n");
+    const historyText = conversationLog.length > 0 ? conversationLog : "(No reply history found)";
+
+    let promptText = "";
+    if (customPrompt) {
+        promptText = customPrompt
+            .replace("{username}", username)
+            .replace("{bio}", bio)
+            .replace("{mainPost}", mainPostText)
+            .replace("{replyHistory}", historyText)
+            .replace("{lang}", lang || 'English');
+    } else {
+        promptText = `Role: Ruthless Bot Hunter. Target: @${username}. Bio: "${bio}". Post: "${mainPostText}". Replies: ${historyText}. Audit for bot/farm. Return JSON: { "bot_probability": number, "reason": "reason in ${lang}" }`;
+    }
+
+    log("AI: Sending to Ollama (Local)...");
+    
+    // Using chat endpoint is generally better for JSON formatting instructions in system prompt
+    const response = await fetch(`${url}/api/chat`, { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" }, 
+        body: JSON.stringify({ 
+            model: model,
+            stream: false,
+            messages: [
+                { role: "system", content: "You are a JSON-only bot detection API. Output STRICT JSON. No markdown." },
+                { role: "user", content: promptText }
+            ],
+            options: { temperature: 0.1 } // Lower temp for consistent JSON
+        }) 
+    });
+
+    if (!response.ok) throw new Error("Ollama connection failed (Check URL/Port)");
+    const data = await response.json();
+    
+    let rawText = data.message.content;
+    rawText = rawText.replace(/```json|```/g, "").trim();
+    
+    const result = JSON.parse(rawText);
+    const scoreVal = (typeof result.bot_probability === 'number') ? result.bot_probability : 0;
+    
+    log(`AI: Result ${scoreVal}% - ${result.reason}`);
+    return { score: scoreVal, reason: result.reason, skipped: false };
+
+  } catch (e) { 
+    log(`Ollama Error: ${e.message}`); 
+    return { score: 0, reason: "Ollama Failed", skipped: true }; 
   }
 }
 
@@ -251,20 +379,33 @@ async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, l
     } catch (e) { log(`Reply Err: ${e.message}`); }
 
     let aiResult = { score: 0, reason: null, skipped: true };
+    
     if (skipCloudAI) {
         log("AI: Disabled / Handled by Frontend");
-    } else if (!apiKey) {
-        log("AI: Skipped (No Key)");
     } else {
-        if (replyData.history.length === 0) log("AI: Running (No Replies - Bio/Post Only)");
-        aiResult = await analyzeWithCloudAI(username, bioText, mainPost.text, replyData.history, apiKey, cloudModelId, lang, customPrompt);
+        const provider = arguments[8] || "cloud"; 
+        const cfCreds = arguments[6];
+        const cfModel = arguments[7];
+        const ollamaConfig = arguments[9];
+
+        if (provider === "cloudflare" && cfCreds) {
+             if (replyData.history.length === 0) log("AI: Running CF (No Replies)");
+             aiResult = await analyzeWithCloudflare(username, bioText, mainPost.text, replyData.history, cfCreds, cfModel, lang, customPrompt);
+        } else if (provider === "ollama" && ollamaConfig) {
+             if (replyData.history.length === 0) log("AI: Running Ollama (No Replies)");
+             aiResult = await analyzeWithOllama(username, bioText, mainPost.text, replyData.history, ollamaConfig, lang, customPrompt);
+        } else if (provider === "cloud" && apiKey) {
+             if (replyData.history.length === 0) log("AI: Running Gemini (No Replies)");
+             aiResult = await analyzeWithCloudAI(username, bioText, mainPost.text, replyData.history, apiKey, cloudModelId, lang, customPrompt);
+        } else {
+             log("AI: Skipped (No valid provider/key)");
+        }
     }
 
     let latestDate = mainPost.date || replyData.date;
     if (mainPost.date && replyData.date) latestDate = (mainPost.date > replyData.date) ? mainPost.date : replyData.date;
     let daysInactive = latestDate ? Math.ceil(Math.abs(new Date() - latestDate) / (86400000)) : 0;
 
-    // --- RULES (Updated to return KEYS instead of text) ---
     let ruleScore = 0;
     let checks = [];
 
@@ -311,10 +452,15 @@ async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, l
     let finalScore = ruleScore;
     
     if (!aiResult.skipped) {
-        checks.push({ special: `🤖 Gemini AI: ${aiResult.score}/100` });
+        let sourceLabel = "AI";
+        if (arguments[8] === "cloudflare") sourceLabel = "Cloudflare AI";
+        else if (arguments[8] === "ollama") sourceLabel = "Ollama (Local)";
+        else sourceLabel = "Gemini AI";
+
+        checks.push({ special: `🤖 ${sourceLabel}: ${aiResult.score}/100` });
         if (aiResult.reason) checks.push({ special: `📝 ${aiResult.reason}` });
         
-        finalScore = aiResult.score; // AI overrides Rule score
+        finalScore = aiResult.score; 
     }
 
     return {

@@ -138,5 +138,13 @@
   "btnSave": "プロンプトを保存",
   "promptSaved": "プロンプトを保存しました",
   "promptEmpty": "プロンプトは空にできません",
-  "confirmReset": "デフォルトのプロンプトに戻しますか？"
+  "confirmReset": "デフォルトのプロンプトに戻しますか？",
+  "aiOllama": "Ollama (ローカル)",
+  "apiUrl": "API URL:",
+  "btnSaveConfig": "設定を保存",
+  "configSaved": "設定を保存しました",
+  "fetchModelsTitle": "ローカル模型を取得",
+  "ollamaConnectionErr": "Ollamaに接続できません。起動しているか確認してください。",
+  "ollamaNoModels": "モデルが見つかりません。ターミナルで `ollama pull <model>` を実行してください。",
+  "ollamaModelsFound": "モデルリストの取得に成功しました。"
 }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Threads Bot Detector",
-  "version": "2.4",
+  "version": "2.5",
   "description": "Analyze Threads followers to detect bots, fake accounts, and farmers using Cloud AI.",
   "permissions": [
     "activeTab", 
@@ -16,7 +16,10 @@
     "https://www.threads.net/*",
     "https://www.threads.com/*",
     "https://*.puter.com/*",
-    "https://*.puter.site/*"
+    "https://*.puter.site/*",
+    "https://api.cloudflare.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "background": {
     "service_worker": "background.js"

@@ -138,5 +138,13 @@
   "btnSave": "儲存提示詞",
   "promptSaved": "提示詞已儲存",
   "promptEmpty": "提示詞不能為空",
-  "confirmReset": "是否重置為預設提示詞？"
+  "confirmReset": "是否重置為預設提示詞？",
+  "aiOllama": "Ollama (本機)",
+  "apiUrl": "API 網址：",
+  "btnSaveConfig": "儲存設定",
+  "configSaved": "設定已儲存",
+  "fetchModelsTitle": "獲取本機模型",
+  "ollamaConnectionErr": "無法連接 Ollama，請確認是否已執行。",
+  "ollamaNoModels": "未找到模型。請在終端機執行 `ollama pull <model>`。",
+  "ollamaModelsFound": "成功獲取模型列表。"
 }

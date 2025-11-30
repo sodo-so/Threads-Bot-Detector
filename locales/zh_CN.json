@@ -138,5 +138,13 @@
   "btnSave": "保存提示词",
   "promptSaved": "提示词已保存",
   "promptEmpty": "提示词不能为空",
-  "confirmReset": "是否重置为默认提示词？"
+  "confirmReset": "是否重置为默认提示词？",
+  "aiOllama": "Ollama (本地)",
+  "apiUrl": "API 地址：",
+  "btnSaveConfig": "保存配置",
+  "configSaved": "配置已保存",
+  "fetchModelsTitle": "获取本地模型",
+  "ollamaConnectionErr": "无法连接 Ollama，请确认是否已运行。",
+  "ollamaNoModels": "未找到模型。请在终端运行 `ollama pull <model>`。",
+  "ollamaModelsFound": "成功获取模型列表。"
 }

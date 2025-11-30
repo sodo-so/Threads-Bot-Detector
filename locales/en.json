@@ -139,4 +139,12 @@
   "promptSaved": "Prompt Saved",
   "promptEmpty": "Prompt cannot be empty",
   "confirmReset": "Reset prompt to default?",
+  "aiOllama": "Ollama (Local)",
+  "apiUrl": "API URL:",
+  "btnSaveConfig": "Save Config",
+  "configSaved": "Config Saved",
+  "fetchModelsTitle": "Fetch Local Models",
+  "ollamaConnectionErr": "Error connecting to Ollama. Ensure it is running.",
+  "ollamaNoModels": "No models found. Run `ollama pull <model>` in terminal.",
+  "ollamaModelsFound": "Models fetched successfully."
 }
