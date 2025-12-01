@@ -1,26 +1,55 @@
 let debugLog = [];
 function log(msg) { debugLog.push(msg); if (debugLog.length > 200) debugLog.shift(); }
 
-// --- PROXY STATE ---
+// --- STATE ---
 let proxyAuthCreds = null;
 let activeProxyUrl = null; 
+let isPanelOpen = false; // Track if the UI is open
 
-// --- 1. INITIALIZE & LISTENERS ---
+// --- 1. LIFECYCLE HANDLERS ---
 
-chrome.storage.local.get("proxy_config", (data) => {
-    if(data.proxy_config) applyProxySettings(data.proxy_config);
+// Safety: Clear proxy when Chrome starts up to prevent "stuck" proxies
+chrome.runtime.onStartup.addListener(() => {
+    chrome.proxy.settings.clear({ scope: "regular" });
+    log("Startup: Proxy cleared");
 });
 
-chrome.proxy.onProxyError.addListener((details) => {
-    log(`❌ Proxy System Error: ${details.error}`);
-    console.error("PAC Error:", details);
+// LISTEN FOR SIDE PANEL CONNECTION
+chrome.runtime.onConnect.addListener((port) => {
+    // Only listen to the specific lifecycle port from panel.js
+    if (port.name === "panel-lifecycle") {
+        log("✅ Panel Opened: Activating Proxy...");
+        isPanelOpen = true;
+        
+        // Load and apply settings immediately when panel opens
+        chrome.storage.local.get("proxy_config", (data) => {
+            if(data.proxy_config && data.proxy_config.enabled) {
+                applyProxySettings(data.proxy_config);
+            }
+        });
+
+        // Listen for panel closing (port disconnects when UI closes)
+        port.onDisconnect.addListener(() => {
+            log("❌ Panel Closed: Terminating Proxy...");
+            isPanelOpen = false;
+            // IMMEDIATELY TERMINATE PROXY
+            chrome.proxy.settings.clear({ scope: "regular" });
+            proxyAuthCreds = null;
+            activeProxyUrl = null;
+        });
+
+        // Listen for keep-alive pings
+        port.onMessage.addListener((msg) => {
+            // Just receiving this keeps the Service Worker alive
+        });
+    }
 });
 
+// --- 2. AUTHENTICATION HANDLER ---
 chrome.webRequest.onAuthRequired.addListener(
     (details) => {
-        // Only provide credentials if it is OUR proxy requesting auth
-        if (details.isProxy && proxyAuthCreds) {
-            // Optional: You could check details.challenger.host to match your proxy host for extra security
+        // Only provide credentials if it is OUR proxy and the Panel is open
+        if (details.isProxy && proxyAuthCreds && isPanelOpen) {
             return { authCredentials: { username: proxyAuthCreds.user, password: proxyAuthCreds.pass } };
         }
         return {};
@@ -29,7 +58,53 @@ chrome.webRequest.onAuthRequired.addListener(
     ["blocking"]
 );
 
-// --- 2. PROXY SETTINGS (PAC SCRIPT) ---
+chrome.proxy.onProxyError.addListener((details) => {
+    log(`❌ Proxy System Error: ${details.error}`);
+    console.error("PAC Error:", details);
+});
+
+// --- 3. MESSAGING ---
+chrome.action.onClicked.addListener((tab) => { 
+    if (tab.url) chrome.sidePanel.open({ tabId: tab.id }).catch((e) => console.log(e)); 
+});
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Allow manual updates from the panel UI
+  if (request.action === "update_proxy") {
+      if (isPanelOpen) {
+          applyProxySettings(request.config);
+      }
+      return false;
+  }
+  
+  // Existing Audit Logic
+  if (request.action === "silent_audit") {
+    debugLog = []; 
+    // Ensure proxy is actually applied before auditing
+    chrome.storage.local.get("proxy_config", (data) => {
+        // Re-apply proxy just in case, but only if panel is open
+        if(isPanelOpen && data.proxy_config) applyProxySettings(data.proxy_config);
+        
+        auditProfileSilent(
+            request.username, request.apiKey, request.skipCloudAI, 
+            request.cloudModelId, request.language, request.customPrompt,
+            request.cfCreds, request.cfModel, request.provider, request.ollamaConfig
+        ).then(sendResponse);
+    });
+    return true; 
+  }
+  
+  // Existing Ollama Logic
+  if (request.action === "fetch_ollama_models") {
+    fetch(`${request.url}/api/tags`)
+        .then(res => res.ok ? res.json() : Promise.reject("Connection Failed"))
+        .then(data => sendResponse({ success: true, models: data.models || [] }))
+        .catch(err => sendResponse({ success: false, error: err.message }));
+    return true; 
+  }
+});
+
+// --- 4. STRICT PROXY SETTINGS (PAC SCRIPT) ---
 function applyProxySettings(config) {
     if (!config || !config.enabled || !config.host || !config.port) {
         chrome.proxy.settings.clear({ scope: "regular" });
@@ -40,26 +115,19 @@ function applyProxySettings(config) {
     }
 
     const scheme = config.proto || "SOCKS5";
-    let proxyString = "";
-    
-    // Construct the proxy return string based on protocol
-    if (scheme === "SOCKS5") {
-        // SOCKS5 preferred, fall back to SOCKS, then DIRECT
-        proxyString = `SOCKS5 ${config.host}:${config.port}; SOCKS ${config.host}:${config.port}`;
-    } else {
-        proxyString = `PROXY ${config.host}:${config.port}`;
-    }
+    // Build proxy string: "SOCKS5 1.2.3.4:1234; SOCKS 1.2.3.4:1234"
+    const proxyString = (scheme === "SOCKS5") 
+        ? `SOCKS5 ${config.host}:${config.port}; SOCKS ${config.host}:${config.port}`
+        : `PROXY ${config.host}:${config.port}`;
 
-    activeProxyUrl = `${config.host}:${config.port} (${scheme})`;
+    activeProxyUrl = `${config.host}:${config.port}`;
 
     // STRICT PAC SCRIPT
-    // Uses dnsDomainIs for precise domain matching.
-    // EVERYTHING else hits the final 'return "DIRECT"'
+    // This function tells Chrome specifically which requests to send to proxy.
+    // 'dnsDomainIs' is safer and more precise than 'shExpMatch'.
     const pacScript = `
         function FindProxyForURL(url, host) {
-            var proxy = "${proxyString}; DIRECT";
-            
-            // Match specific domains strictly
+            // 1. Target specific Threads & Meta infrastructure
             if (dnsDomainIs(host, "threads.net") || 
                 dnsDomainIs(host, ".threads.net") ||
                 dnsDomainIs(host, "threads.com") || 
@@ -71,10 +139,10 @@ function applyProxySettings(config) {
                 dnsDomainIs(host, "fbcdn.net") || 
                 dnsDomainIs(host, ".fbcdn.net")) {
                 
-                return proxy;
+                return "${proxyString}; DIRECT";
             }
             
-            // SECURITY: All other traffic MUST use original IP
+            // 2. SECURITY: Force everything else to use original IP (Direct)
             return "DIRECT";
         }
     `;
@@ -84,63 +152,22 @@ function applyProxySettings(config) {
         pacScript: { data: pacScript } 
     };
 
-    // Apply setting. 
-    // Note: 'scope: "regular"' is required to affect the main browser profile, 
-    // which includes the background script's fetch() requests.
     chrome.proxy.settings.set({ value: configObj, scope: "regular" }, () => {
         if (chrome.runtime.lastError) { 
             log("Proxy Config Error: " + chrome.runtime.lastError.message); 
         } else { 
-            log(`✅ Proxy Set: ${activeProxyUrl} (Targeted Only)`); 
+            log(`✅ Proxy Active: ${activeProxyUrl} (Scoped to Threads)`); 
         }
     });
 
     if (config.user && config.pass) { 
         proxyAuthCreds = { user: config.user, pass: config.pass }; 
-    } else { 
-        proxyAuthCreds = null; 
+    } else {
+        proxyAuthCreds = null;
     }
 }
 
-// --- 3. MESSAGING ---
-chrome.action.onClicked.addListener((tab) => { 
-    if (tab.url) chrome.sidePanel.open({ tabId: tab.id }).catch((e) => console.log(e)); 
-});
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "silent_audit") {
-    debugLog = []; 
-    auditProfileSilent(
-        request.username, 
-        request.apiKey, 
-        request.skipCloudAI, 
-        request.cloudModelId, 
-        request.language,
-        request.customPrompt,
-        request.cfCreds,
-        request.cfModel,
-        request.provider,
-        request.ollamaConfig
-    ).then(sendResponse);
-    return true; 
-  }
-  if (request.action === "update_proxy") {
-      applyProxySettings(request.config);
-      return false;
-  }
-  if (request.action === "fetch_ollama_models") {
-    fetch(`${request.url}/api/tags`)
-        .then(res => {
-            if (!res.ok) throw new Error("Ollama connection failed");
-            return res.json();
-        })
-        .then(data => sendResponse({ success: true, models: data.models || [] }))
-        .catch(err => sendResponse({ success: false, error: err.message }));
-    return true; 
-  }
-});
-
-// --- 4. UTILS ---
+// --- 5. UTILS & AUDIT LOGIC (Unchanged) ---
 function decodeUnicode(str) { if (!str) return ""; let result = str.replace(/\\n/g, "\n"); try { if (!result.startsWith('"')) { } } catch (e) {} result = result.replace(/\\u([\d\w]{4})/gi, (match, grp) => String.fromCharCode(parseInt(grp, 16))); return result.replace(/\\/g, ""); }
 function extractCaption(htmlString) { const match = htmlString.match(/"caption":\{.*?"text":"((?:[^"\\]|\\.)*)"/); return match ? decodeUnicode(match[1]) : null; }
 function extractBio(htmlString, metaDesc) { if (metaDesc && metaDesc.includes(" - ")) { const candidate = metaDesc.split(" - ").slice(1).join(" - ").trim(); if (candidate.length > 0) return decodeUnicode(candidate); } const match = htmlString.match(/"biography":"((?:[^"\\]|\\.)*)"/); return match ? decodeUnicode(match[1]) : ""; }
@@ -188,27 +215,21 @@ function extractUserRepliesWithContext(htmlString, targetUser) {
   return uniqueResults.slice(0, 5);
 }
 
-// --- 5. CLOUD AI & AUDIT LOGIC (Unchanged from original logic, dependencies handled here) ---
-// (Keeping the rest of your original logic intact as the issue was isolated to Proxy Settings)
-
+// --- CLOUD AI & AUDIT ---
 async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, apiKey, modelId, lang, customPrompt) {
   try {
     const targetModel = modelId || "gemini-2.5-flash"; 
     log(`AI: Init (${targetModel})`);
-    
     const conversationLog = replyHistory.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n");
     const historyText = conversationLog.length > 0 ? conversationLog : "(No reply history found)";
-
     let prompt = "";
     if (customPrompt) {
         prompt = customPrompt.replace("{username}", username).replace("{bio}", bio).replace("{mainPost}", mainPostText).replace("{replyHistory}", historyText).replace("{lang}", lang || 'English');
     } else {
         prompt = `Role: Ruthless Bot Hunter. Target Profile: @${username}. Bio: "${bio}". Main Post Content: "${mainPostText}". Reply History: ${historyText}. Audit this user. Return JSON: { "bot_probability": number, "reason": "explanation in ${lang || 'English'}" }`;
     }
-    
     log("AI: Sending... (Direct Connection)");
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
-    
     const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
     const data = await response.json();
     if(data.error) throw new Error(data.error.message);
@@ -222,7 +243,6 @@ async function analyzeWithCloudAI(username, bio, mainPostText, replyHistory, api
 
 async function analyzeWithCloudflare(username, bio, mainPostText, replyHistory, creds, modelId, lang, customPrompt) {
     try {
-        // ... (Same as original code)
         const targetModel = modelId || "@cf/meta/llama-3-8b-instruct"; 
         const conversationLog = replyHistory.map(r => `- Context: "${r.context.text}"\n  Reply: "${r.reply.text}"`).join("\n");
         const historyText = conversationLog.length > 0 ? conversationLog : "(No reply history found)";
@@ -254,9 +274,11 @@ async function analyzeWithOllama(username, bio, mainPostText, replyHistory, conf
 async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, lang, customPrompt) {
   try {
     const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'text/html' };
-    if (activeProxyUrl) { log(`🌍 FETCH VIA PROXY: ${activeProxyUrl}`); } else { log(`🌍 FETCH DIRECT (No Proxy)`); }
     
-    // This fetch request will adhere to the PAC script defined above.
+    // Log whether we are using proxy or direct based on internal logic
+    // Note: The PAC script actually decides per-request, but this log helps debugging
+    if (activeProxyUrl) { log(`🌍 FETCH VIA PROXY (Targeted): ${activeProxyUrl}`); } else { log(`🌍 FETCH DIRECT (No Proxy)`); }
+    
     const mainRes = await fetch(`https://www.threads.net/@${username}`, { headers });
     
     if (!mainRes.ok) {
@@ -265,7 +287,7 @@ async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, l
         return { success: false, error: `HTTP ${mainRes.status}` };
     }
     const mainHtml = await mainRes.text();
-    // ... (Extraction logic remains same as original)
+
     const metaImg = mainHtml.match(/<meta\s+property="og:image"\s+content="([^"]+)"/);
     const avatarUrl = metaImg ? metaImg[1] : null;
     const metaDesc = (mainHtml.match(/<meta\s+property="og:description"\s+content="([^"]+)"/) || [])[1] || "";
@@ -276,43 +298,84 @@ async function auditProfileSilent(username, apiKey, skipCloudAI, cloudModelId, l
     let realName = metaTitle ? decodeUnicode(metaTitle[1].split('(')[0].trim()) : username;
     let bioText = extractBio(mainHtml, metaDesc);
     const totalVisiblePosts = (mainHtml.match(/"taken_at":(\d{10})/g) || []).length;
+
     let mainPost = { date: null, text: null, exists: false };
     const mainTime = mainHtml.match(/"taken_at":(\d{10})/);
-    if (mainTime) { mainPost.date = new Date(parseInt(mainTime[1]) * 1000); mainPost.exists = true; mainPost.text = extractCaption(mainHtml) || "(Image/Video Post)"; }
+    if (mainTime) {
+      mainPost.date = new Date(parseInt(mainTime[1]) * 1000);
+      mainPost.exists = true;
+      mainPost.text = extractCaption(mainHtml) || "(Image/Video Post)";
+    }
 
     let replyData = { exists: false, date: null, history: [], avgLength: 999 };
     try {
       const replyRes = await fetch(`https://www.threads.net/@${username}/replies`, { headers });
       const replyHtml = await replyRes.text();
       replyData.history = extractUserRepliesWithContext(replyHtml, username);
-      if (replyData.history.length > 0) { replyData.exists = true; replyData.date = new Date(replyData.history[0].reply.date * 1000); const total = replyData.history.reduce((acc, item) => acc + item.reply.text.length, 0); replyData.avgLength = Math.round(total / replyData.history.length); }
+      if (replyData.history.length > 0) {
+          replyData.exists = true;
+          replyData.date = new Date(replyData.history[0].reply.date * 1000);
+          const total = replyData.history.reduce((acc, item) => acc + item.reply.text.length, 0);
+          replyData.avgLength = Math.round(total / replyData.history.length);
+      }
     } catch (e) { log(`Reply Err: ${e.message}`); }
 
     let aiResult = { score: 0, reason: null, skipped: true };
     if (!skipCloudAI) {
         const provider = arguments[8] || "cloud"; 
-        const cfCreds = arguments[6]; const cfModel = arguments[7]; const ollamaConfig = arguments[9];
-        if (provider === "cloudflare" && cfCreds) aiResult = await analyzeWithCloudflare(username, bioText, mainPost.text, replyData.history, cfCreds, cfModel, lang, customPrompt);
-        else if (provider === "ollama" && ollamaConfig) aiResult = await analyzeWithOllama(username, bioText, mainPost.text, replyData.history, ollamaConfig, lang, customPrompt);
-        else if (provider === "cloud" && apiKey) aiResult = await analyzeWithCloudAI(username, bioText, mainPost.text, replyData.history, apiKey, cloudModelId, lang, customPrompt);
+        const cfCreds = arguments[6];
+        const cfModel = arguments[7];
+        const ollamaConfig = arguments[9];
+
+        if (provider === "cloudflare" && cfCreds) {
+             aiResult = await analyzeWithCloudflare(username, bioText, mainPost.text, replyData.history, cfCreds, cfModel, lang, customPrompt);
+        } else if (provider === "ollama" && ollamaConfig) {
+             aiResult = await analyzeWithOllama(username, bioText, mainPost.text, replyData.history, ollamaConfig, lang, customPrompt);
+        } else if (provider === "cloud" && apiKey) {
+             aiResult = await analyzeWithCloudAI(username, bioText, mainPost.text, replyData.history, apiKey, cloudModelId, lang, customPrompt);
+        }
     }
 
     let latestDate = mainPost.date || replyData.date;
     if (mainPost.date && replyData.date) latestDate = (mainPost.date > replyData.date) ? mainPost.date : replyData.date;
     let daysInactive = latestDate ? Math.ceil(Math.abs(new Date() - latestDate) / (86400000)) : 0;
-    let ruleScore = 0; let checks = [];
-    if (displayFollowers !== "Hidden") { let raw = displayFollowers.replace(/,/g,'').replace('K','000').replace('M','000000'); if (parseFloat(raw) < 5) { ruleScore += 20; checks.push({ key: "lowF", val: displayFollowers, score: 20 }); } }
-    if (!mainPost.exists) { ruleScore += 40; checks.push({ key: "noMain", score: 40 }); } else if (totalVisiblePosts < 4) { ruleScore += 40; checks.push({ key: "lowAct", score: 40 }); }
+
+    let ruleScore = 0;
+    let checks = [];
+
+    if (displayFollowers !== "Hidden") {
+       let raw = displayFollowers.replace(/,/g,'').replace('K','000').replace('M','000000');
+       if (parseFloat(raw) < 5) { ruleScore += 20; checks.push({ key: "lowF", val: displayFollowers, score: 20 }); }
+    }
+    if (!mainPost.exists) { ruleScore += 40; checks.push({ key: "noMain", score: 40 }); } 
+    else if (totalVisiblePosts < 4) { ruleScore += 40; checks.push({ key: "lowAct", score: 40 }); }
     if (latestDate && daysInactive > 180) { ruleScore += 40; checks.push({ key: "inactive" }); }
     if (!avatarUrl || avatarUrl.includes("default_profile")) { ruleScore += 20; checks.push({ key: "defAv", score: 20 }); }
-    if (!replyData.exists || replyData.history.length === 0) { ruleScore += 60; checks.push({ key: "noRep", score: 60 }); } else if (replyData.history.length < 2) { ruleScore += 20; checks.push({ key: "fewRep", score: 20 }); }
+    if (!replyData.exists || replyData.history.length === 0) { ruleScore += 60; checks.push({ key: "noRep", score: 60 }); } 
+    else if (replyData.history.length < 2) { ruleScore += 20; checks.push({ key: "fewRep", score: 20 }); }
     if (replyData.exists && replyData.avgLength < 15) { ruleScore += 20; checks.push({ key: "shortRep", val: `Avg ${replyData.avgLength}`, score: 20 }); }
+
     let finalScore = ruleScore;
     if (!aiResult.skipped) {
-        let sourceLabel = arguments[8] === "cloudflare" ? "Cloudflare AI" : arguments[8] === "ollama" ? "Ollama (Local)" : "Gemini AI";
-        checks.push({ special: `🤖 ${sourceLabel}: ${aiResult.score}/100` }); if (aiResult.reason) checks.push({ special: `📝 ${aiResult.reason}` }); finalScore = aiResult.score; 
+        let sourceLabel = "AI";
+        if (arguments[8] === "cloudflare") sourceLabel = "Cloudflare AI";
+        else if (arguments[8] === "ollama") sourceLabel = "Ollama (Local)";
+        else sourceLabel = "Gemini AI";
+        checks.push({ special: `🤖 ${sourceLabel}: ${aiResult.score}/100` });
+        if (aiResult.reason) checks.push({ special: `📝 ${aiResult.reason}` });
+        finalScore = aiResult.score; 
     }
 
-    return { success: true, username, realName, followerCount: displayFollowers, bioSnippet: bioText, avatar: avatarUrl, mainPost: { text: mainPost.text, dateStr: mainPost.date ? mainPost.date.toLocaleDateString() : "-", exists: mainPost.exists }, replyData, postCount: totalVisiblePosts, daysInactive, score: Math.min(100, finalScore), checklist: checks, debugLog };
-  } catch (e) { log(`❌ Network Error: ${e.message}`); if (activeProxyUrl) { log("⚠️ PROXY TIMEOUT? Try a different server."); } return { success: false, error: activeProxyUrl ? "Proxy Timeout" : "Network Error" }; }
+    return {
+      success: true, username, realName, followerCount: displayFollowers, bioSnippet: bioText, avatar: avatarUrl,
+      mainPost: { text: mainPost.text, dateStr: mainPost.date ? mainPost.date.toLocaleDateString() : "-", exists: mainPost.exists },
+      replyData, postCount: totalVisiblePosts, daysInactive, 
+      score: Math.min(100, finalScore),
+      checklist: checks, debugLog
+    };
+  } catch (e) { 
+      log(`❌ Network Error: ${e.message}`);
+      if (activeProxyUrl) { log("⚠️ PROXY TIMEOUT? Try a different server."); }
+      return { success: false, error: activeProxyUrl ? "Proxy Timeout" : "Network Error" }; 
+  }
 }

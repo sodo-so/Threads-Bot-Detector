@@ -1,3 +1,22 @@
+// --- LIFECYCLE CONNECTION (Required for Proxy Management) ---
+(function keepAlive() {
+    // 1. Open a long-lived connection to the background script
+    // This tells background.js that the panel is open
+    const port = chrome.runtime.connect({ name: "panel-lifecycle" });
+
+    // 2. Send a "ping" every 20 seconds to prevent the Service Worker from falling asleep
+    // This ensures the proxy stays active while the window is open
+    const interval = setInterval(() => {
+        port.postMessage({ action: "ping" });
+    }, 20000);
+
+    // 3. Cleanup if the port disconnects unexpectedly
+    port.onDisconnect.addListener(() => {
+        clearInterval(interval);
+    });
+})();
+// -----------------------------------------------------------
+
 let extractedUsers = [];
 let auditCache = {};
 let geminiKey = null;
@@ -284,6 +303,9 @@ chrome.storage.local.get(["audit_db", "enc_api_key", "cf_creds", "ollama_config"
         if(document.getElementById("proxyUser")) document.getElementById("proxyUser").value = p.user || "";
         if(document.getElementById("proxyPass")) document.getElementById("proxyPass").value = p.pass || "";
         toggleProxyInputs(p.enabled);
+        
+        // Ensure proxy is active if enabled (triggers update_proxy in background)
+        if(p.enabled) saveProxySettings();
     }
     if (data.privacy_mode) {
         document.body.classList.add("privacy-mode");
@@ -423,7 +445,7 @@ const proxyInputsDiv = document.getElementById("proxyInputs");
 function toggleProxyInputs(enabled) { if(proxyInputsDiv) proxyInputsDiv.style.display = enabled ? "block" : "none"; }
 
 if(proxyEnabledCheck) {
-    proxyEnabledCheck.addEventListener("change", (e) => { toggleProxyInputs(e.target.checked); if (!e.target.checked) saveProxySettings(); });
+    proxyEnabledCheck.addEventListener("change", (e) => { toggleProxyInputs(e.target.checked); saveProxySettings(); });
 }
 if(document.getElementById("saveProxyBtn")) {
     document.getElementById("saveProxyBtn").addEventListener("click", saveProxySettings);
@@ -476,6 +498,7 @@ function saveProxySettings() {
         pass: document.getElementById("proxyPass").value.trim()
     };
     chrome.storage.local.set({ "proxy_config": config }, () => {
+        // Send to background to apply proxy
         chrome.runtime.sendMessage({ action: "update_proxy", config: config });
         if (config.enabled && config.host) showToast(t("proxySaved"));
         else if (!config.enabled) showToast(t("proxyDisabled"));
